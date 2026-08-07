@@ -1,0 +1,1 @@
+# growfund-currency-manager
