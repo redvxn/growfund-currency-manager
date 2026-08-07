@@ -1,0 +1,396 @@
+body.woocommerce-checkout .wrapper-page {
+    background: transparent;
+}
+
+.elementor-shortcode .woocommerce-checkout {
+    padding: 5% 0;
+}
+
+.custom-donation-selector,
+.custom-tip-selector,
+.donor-information,
+.payment-gateways-wrap {
+    padding: 10px 25px;
+}
+
+/* ==========================================
+   1. CAMPAIGN SUMMARY HEADER
+========================================== */
+.fude-campaign-summary-wrapper {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 30px;
+    margin-bottom: 10px;
+}
+
+/* Left Column - 40% */
+.fude-summary-left {
+    flex: 0 0 calc(40% - 15px);
+    max-width: calc(40% - 15px);
+}
+
+.fude-summary-left img.fude-campaign-img {
+    width: 100%;
+    height: auto;
+    border-radius: 6px;
+    object-fit: cover;
+    display: block;
+}
+
+/* Right Column - 60% */
+.fude-summary-right {
+    flex: 0 0 calc(60% - 15px);
+    max-width: calc(60% - 15px);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 0px;
+}
+
+.fude-summary-title {
+    width: 100%;
+    margin-top: 0;
+    margin-bottom: 10px;
+    font-size: 20px;
+    font-weight: 700;
+    line-height: 1.3;
+    color: #333;
+}
+
+.fude-summery-description {
+    font-size: 14px;
+    width: 100%;
+    margin-top: 0px;
+    margin-bottom: 0px;
+    color: #666;
+}
+
+.fude-summary-stats {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    gap: 20px;
+}
+
+.fude-stat-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.fude-stat-label {
+    font-size: 14px;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.fude-stat-value {
+    font-size: 18px;
+    font-weight: bold;
+    color: #2b2b2b;
+}
+
+
+/* ==========================================
+   2. CUSTOM UNIFIED CHECKOUT FORM
+========================================== */
+.custom-unified-checkout {
+    display: flex;
+    gap: 0px 40px;
+    align-items: flex-start;
+    /* Prevents columns from stretching unevenly */
+    padding-top: 20px;
+}
+
+.checkout-left-col {
+    flex: 2;
+    min-width: 0;
+    /* Prevents flexbox blowout on smaller screens */
+    background: var(--gfcm-bg-card);
+    border: 1px solid var(--gfcm-border);
+    border-radius: var(--gfcm-radius);
+    padding: 25px;
+}
+
+.checkout-right-col {
+    flex: 1;
+    background: #fff;
+    padding: 25px;
+    border-radius: var(--gfcm-radius);
+    position: -webkit-sticky;
+    position: sticky;
+    /* Keeps the summary in view as they scroll the left column */
+    top: 40px;
+    align-self: flex-start;
+    height: max-content;
+    z-index: 10;
+}
+
+.checkout-right-col .place-order {
+    padding: 0px !important;
+}
+
+/* Force overflow visible on parent containers to ensure position: sticky works across all themes/page builders */
+form.woocommerce-checkout,
+.custom-unified-checkout {
+    overflow: visible !important;
+}
+
+/* Fix Elementor & Theme wrappers that hide overflow and break sticky */
+body.woocommerce-checkout,
+body.woocommerce-checkout .elementor-widget-shortcode,
+body.woocommerce-checkout .elementor-widget-wrap,
+body.woocommerce-checkout .elementor-column,
+body.woocommerce-checkout .elementor-container,
+body.woocommerce-checkout .elementor-section {
+    overflow: visible !important;
+    overflow-x: clip !important;
+}
+
+
+
+.custom-donation-selector input[type="number"],
+.custom-tip-selector input[type="number"],
+.custom-donation-selector,
+.donor-information {
+    width: 100%;
+}
+
+.donation-grid,
+.tip-grid {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    /* Ensures buttons wrap nicely if there isn't enough space */
+}
+
+.donation-btn,
+.tip-btn {
+    padding: 10px 20px;
+    border: 1px solid #ccc;
+    background: #fff;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.donation-btn.active,
+.tip-btn.active {
+    background: #4b6b3e;
+    /* Mockup green */
+    color: white;
+    border-color: #4b6b3e;
+}
+
+.fude-hidden-field {
+    display: none !important;
+}
+
+
+/* ==========================================
+   3. MOBILE BREAKPOINTS (The Reordering Magic)
+========================================== */
+@media (max-width: 991px) {
+
+    /* Stack the top campaign details header */
+    .fude-summary-left,
+    .fude-summary-right {
+        flex: 0 0 100%;
+        max-width: 100%;
+    }
+
+    .fude-summary-stats {
+        flex-direction: column;
+        gap: 10px;
+        margin-top: 30px;
+    }
+
+    .gfcm-currency-selector-wrap {
+        width: 100%;
+    }
+
+    /* Wrap the entire checkout form in a flex column so we can reorder children */
+    form.woocommerce-checkout {
+        display: flex;
+        flex-direction: column;
+    }
+
+    /* 'display: contents' visually removes these wrapper containers, allowing 
+       the items inside them to act as direct children of the form! */
+    .custom-unified-checkout,
+    .checkout-left-col {
+        display: contents;
+    }
+    
+    .fude-campaign-summary-wrapper, .custom-donation-selector, .custom-tip-selector, .donor-information, .payment-gateways-wrap {
+        background: var(--gfcm-bg-card);
+        padding: 25px;
+    }
+
+    /* Order 1: Amount Selection & Donor Info (Left Col Items) */
+    .checkout-left-col>* {
+        order: 1;
+    }
+    
+    .fude-campaign-summary-wrapper {
+        margin-bottom: 0px;
+    }
+
+    /* Order 2: Order Summary (Right Col) 
+       This forces the summary to jump BETWEEN Donor Info and Payment Gateways! */
+    .checkout-right-col {
+        order: 3;
+        width: 100%;
+        margin-top: 0px;
+        border-radius: 0px;
+        margin-bottom: 30px;
+        position: static;
+        /* Removes sticky behavior on mobile */
+    }
+
+    /* Order 3: Payment Gateways (Left Col Item) */
+    .payment-gateways-wrap {
+        order: 2 !important;
+        /* Forces the ENTIRE payment block to the absolute bottom */
+        width: 100%;
+        margin-top: 0px;
+        /* Adds a nice gap between the Summary and the Gateways */
+    }
+
+}
+
+/* ==========================================
+   ANONYMOUS DONATION CHECKBOX
+========================================== */
+.fude-anonymous-wrapper {
+    margin-bottom: 20px;
+}
+
+.fude-anonymous-description {
+    font-size: 14px;
+    color: #666;
+    margin-top: 0;
+    margin-bottom: 12px;
+    /* Adds space between the description and the checkbox */
+}
+
+/* Replaces the inline styles on the label */
+.custom-anonymous-checkbox .woocommerce-form__label {
+    font-weight: 400;
+    color: #333;
+}
+
+/* Optional: Removes the default bottom margin WooCommerce adds to form rows */
+.fude-anonymous-wrapper .custom-anonymous-checkbox {
+    margin-bottom: 0;
+}
+
+.woocommerce-terms-and-conditions-wrapper input[type="checkbox"],
+.woocommerce-input-wrapper input[type="checkbox"] {
+    margin-right: 10px;
+}
+
+/* ==========================================
+   CUSTOM CURRENCY DROPDOWN UI
+========================================== */
+.fude-select-container {
+    position: relative;
+    width: 100%;
+    max-width: 400px;
+    font-family: inherit;
+}
+
+/* The box they click */
+.fude-select-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #fff;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    padding: 5px 15px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.fude-select-selected {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.fude-select-arrow {
+    font-size: 12px;
+    color: #666;
+    transition: transform 0.2s ease;
+}
+
+/* Rotate arrow when open */
+.fude-select-container.open .fude-select-arrow {
+    transform: rotate(180deg);
+}
+
+/* The hidden list of options */
+.fude-select-options {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: #fff;
+    border: 1px solid #ccc;
+    border-top: none;
+    border-radius: 0 0 4px 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    z-index: 999;
+    display: none;
+    max-height: 250px;
+    overflow-y: auto;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.fude-select-container.open .fude-select-options {
+    display: block;
+}
+
+/* Individual list items */
+.fude-select-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 15px;
+    cursor: pointer;
+    transition: background 0.2s;
+    margin: 0;
+}
+
+.fude-select-option:hover,
+.fude-select-option.selected {
+    background: #f8f9fa;
+}
+
+/* The Flags */
+.gfcm-dropdown-flag {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    object-fit: cover;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    display: block;
+}
+
+.growfund-payment-success-toaster-amount-value {
+    text-align: center;
+}
+
+/* ==========================================
+   CUSTOM INLINE CURRENCY SELECTOR
+========================================== */
+.fude-summary-right .gfcm-currency-selector-wrap {
+    padding: 0;
+    border: none;
+    background: transparent;
+    margin-top: 15px;
+}

@@ -1,0 +1,179 @@
+:root {
+    /* Main Rebrandable Variables */
+    --gfcm-primary: #02a95c;
+    --gfcm-primary-hover: #028a4b;
+    --gfcm-primary-light: #e6f7ef;
+    
+    --gfcm-text-main: #000000;
+    --gfcm-text-muted: #666666;
+    
+    --gfcm-bg-main: #f1f1f1;
+    --gfcm-bg-secondary: #f9f9f9;
+    --gfcm-bg-card: #ffffff;
+    --gfcm-border: #eaeaea;
+    
+    --gfcm-radius: 30px;
+}
+
+/* ==========================================
+   1. GLOBAL & EXISTING CHECKOUT OVERRIDES
+========================================== */
+body.woocommerce-checkout .wrapper-page,
+body.page-template-default, body.page-id-3309 .wrapper-page { background: var(--gfcm-bg-secondary); }
+
+.woocommerce .checkout-right-col .place-order .button[type*="submit"], .woocommerce .checkout-right-col .place-order .button {
+    background: var(--gfcm-primary); color: #fff; width: 100%; border-radius: var(--gfcm-radius);
+}
+
+/* Hide the REAL button in its original left-column location so it doesn't flash */
+.woocommerce-checkout-payment .place-order {
+    display: none !important;
+}
+
+/* Ensure it is visible when JS drops it into the right column */
+.checkout-right-col > .place-order {
+    display: block !important;
+}
+.donation-btn, .tip-btn {
+     background: var(--gfcm-bg-main);
+}
+
+.donation-btn.active, .tip-btn.active {
+    background: var(--gfcm-primary); color: #fff; border-color: var(--gfcm-primary);
+}
+
+body.woocommerce-checkout .custom-unified-checkout .fude-anonymous-wrapper label.checkbox {
+    font-weight: 700 !important;
+}
+
+/* ==========================================
+   2. KYC MULTI-STEP FORM STYLES
+========================================== */
+.gfcm-kyc-container {
+    max-width: 600px;
+    margin: 40px auto;
+    font-family: inherit;
+    color: var(--gfcm-text-main);
+}
+.gfcm-kyc-header { text-align: center; margin-bottom: 30px; }
+.gfcm-kyc-header h2 { font-size: 28px; font-weight: 700; margin-bottom: 10px; }
+.gfcm-kyc-header p { color: var(--gfcm-text-muted); }
+
+.gfcm-kyc-card {
+    background: var(--gfcm-bg-card);
+    border: 1px solid var(--gfcm-border);
+    border-radius: var(--gfcm-radius);
+    padding: 30px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.03);
+}
+
+/* Progress Bar */
+.gfcm-kyc-progress-header {
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;
+}
+.gfcm-kyc-progress-header h3 { font-size: 16px; margin: 0; font-weight: 600; }
+.gfcm-kyc-progress-header span { font-size: 13px; color: var(--gfcm-text-muted); }
+.gfcm-progress-track {
+    width: 100%; height: 6px; background: #e0e0e0; border-radius: 4px; margin-bottom: 30px; overflow: hidden;
+}
+.gfcm-progress-bar {
+    height: 100%; background: var(--gfcm-primary); border-radius: 4px; transition: width 0.3s ease;
+}
+
+/* Steps & Inputs */
+.gfcm-step { display: none; animation: fadeIn 0.4s; }
+.gfcm-step.active { display: block; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ADDED: input[type="tel"] to catch the new phone fields! */
+.gfcm-step input[type="text"], 
+.gfcm-step input[type="tel"], 
+.gfcm-step select, 
+.gfcm-step textarea {
+    width: 100%; padding: 12px 15px; margin-bottom: 15px;
+    border: 1px solid var(--gfcm-border); border-radius: 6px; font-size: 15px;
+    box-sizing: border-box;
+}
+.gfcm-step label { display: block; font-weight: 600; margin-bottom: 5px; font-size: 14px; color: #333; }
+.gfcm-required { color: #d9534f; margin-left: 4px; font-weight: bold; }
+
+/* Custom Radio Cards */
+.gfcm-radio-card {
+    display: block; position: relative; margin-bottom: 15px; cursor: pointer;
+}
+.gfcm-radio-card input[type="radio"] {
+    position: absolute; opacity: 0;
+}
+.gfcm-radio-content {
+    display: flex; align-items: center; padding: 15px 20px; border: 2px solid var(--gfcm-border);
+    border-radius: var(--gfcm-radius); transition: all 0.2s ease;
+}
+.gfcm-icon-circle {
+    width: 40px; height: 40px; border-radius: 50%; background: var(--gfcm-primary-light);
+    display: flex; align-items: center; justify-content: center; margin-right: 15px; font-size: 20px;
+}
+.gfcm-radio-card input[type="radio"]:checked + .gfcm-radio-content {
+    border-color: var(--gfcm-primary); background: var(--gfcm-primary-light);
+}
+.gfcm-radio-card input[type="radio"]:checked + .gfcm-radio-content .gfcm-icon-circle {
+    background: var(--gfcm-primary); color: #fff;
+}
+.gfcm-radio-content strong { display: block; font-size: 16px; margin-bottom: 2px; }
+.gfcm-radio-content p { margin: 0; font-size: 13px; color: var(--gfcm-text-muted); }
+
+/* Provider List tweaks */
+.gfcm-provider-list .gfcm-radio-content {
+    padding: 10px 15px; 
+}
+.gfcm-provider-list .gfcm-radio-content strong {
+    font-size: 15px;
+}
+
+/* Buttons & Alerts */
+.gfcm-kyc-actions { display: flex; justify-content: flex-end; gap: 15px; margin-top: 30px; }
+.gfcm-btn-primary {
+    background: var(--gfcm-primary); color: #fff; border: none; padding: 12px 25px;
+    border-radius: var(--gfcm-radius); cursor: pointer; font-weight: 600; font-size: 15px; transition: 0.2s;
+}
+.gfcm-btn-primary:hover { background: var(--gfcm-primary-hover); }
+#gfcm-prev-btn {
+    background: transparent; border: 1px solid var(--gfcm-border); color: var(--gfcm-text-muted);
+    padding: 12px 25px; border-radius: var(--gfcm-radius); cursor: pointer; font-weight: 600;
+}
+.gfcm-alert-box {
+    background: var(--gfcm-bg-main); padding: 10px; border-radius: 6px; font-size: 13px; color: var(--gfcm-text-muted);
+}
+
+/* ==========================================
+   3. INLINE VALIDATION TOOLTIPS
+========================================== */
+.gfcm-error-msg {
+    color: #d9534f;
+    font-size: 13px;
+    margin-top: -10px;
+    margin-bottom: 15px;
+    display: block;
+    font-weight: 500;
+    animation: fadeInError 0.2s ease-in-out;
+}
+
+#gfcm-consent-error {
+    margin-top: 10px;
+    margin-bottom: 0;
+}
+
+@keyframes fadeInError {
+    from { opacity: 0; transform: translateY(-5px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* ==========================================
+   4. CHECKOUT DISABLE STATES
+========================================== */
+.tip-grid .tip-btn.gfcm-disabled, 
+#custom-tip-amount.gfcm-disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    background-color: #f5f5f5;
+    border-color: #e0e0e0;
+}
