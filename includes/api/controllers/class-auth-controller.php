@@ -21,10 +21,11 @@ class GFCM_Auth_Controller {
      * @return WP_REST_Response|WP_Error
      */
     public function login( $request ) {
-        $username = $request->get_param( 'username' );
-        $password = $request->get_param( 'password' );
+        // 1. Extract and sanitize inputs
+        $username = sanitize_text_field( $request->get_param( 'username' ) );
+        $password = $request->get_param( 'password' ); // Don't sanitize password (can contain special characters)
 
-        // Validate required fields
+        // 2. Validate required fields
         if ( empty( $username ) || empty( $password ) ) {
             return new WP_Error(
                 'missing_credentials',
@@ -33,19 +34,15 @@ class GFCM_Auth_Controller {
             );
         }
 
-        // Authenticate user
-        $user = wp_authenticate( $username, $password );
+        // 3. Delegate authentication to AuthService (Controller -> AuthService)
+        $user = $this->auth_service->authenticate_user( $username, $password );
 
         if ( is_wp_error( $user ) ) {
-            return new WP_Error(
-                'invalid_credentials',
-                'Invalid username or password',
-                [ 'status' => 401 ]
-            );
+            return $user; // Returns 401 WP_Error formatted by AuthService
         }
 
-        // Generate tokens
-        $access_token = GFCM_JWT_Handler::issue_token( $user->ID, 'access' );
+        // 4. Issue JWT tokens
+        $access_token  = GFCM_JWT_Handler::issue_token( $user->ID, 'access' );
         $refresh_token = GFCM_JWT_Handler::issue_token( $user->ID, 'refresh' );
 
         if ( ! $access_token || ! $refresh_token ) {
@@ -56,14 +53,20 @@ class GFCM_Auth_Controller {
             );
         }
 
+        // 5. Formulate response for Next.js
         return rest_ensure_response( [
             'success'       => true,
             'access_token'  => $access_token,
             'refresh_token' => $refresh_token,
-            'user_id'       => $user->ID,
-            'username'      => $user->user_login,
-            'email'         => $user->user_email,
             'expires_in'    => HOUR_IN_SECONDS,
+            'user'          => [
+                'id'         => $user->ID,
+                'username'   => $user->user_login,
+                'email'      => $user->user_email,
+                'first_name' => $user->first_name,
+                'last_name'  => $user->last_name,
+                'roles'      => $user->roles,
+            ],
         ] );
     }
 

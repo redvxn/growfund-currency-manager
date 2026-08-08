@@ -17,25 +17,19 @@ class GFCM_JWT_Middleware {
         $token = self::extract_token_from_request( $request );
 
         if ( ! $token ) {
-            return new WP_Error(
-                'missing_auth_header',
-                'Authorization header missing or malformed',
-                [ 'status' => 401 ]
-            );
+            return new WP_Error( 'missing_auth_header', 'Authorization header missing', [ 'status' => 401 ] );
         }
 
         $user_id = GFCM_JWT_Handler::validate_token( $token );
 
         if ( ! $user_id ) {
-            return new WP_Error(
-                'invalid_token',
-                'Invalid or expired JWT token',
-                [ 'status' => 401 ]
-            );
+            return new WP_Error( 'invalid_token', 'Invalid or expired JWT token', [ 'status' => 401 ] );
         }
 
-        // Set WordPress user context
-        wp_set_current_user( $user_id );
+        // REMOVE THIS: wp_set_current_user( $user_id );
+
+        // INSTEAD: Inject the user_id directly into the request attributes
+        $request->set_attribute( 'jwt_user_id', $user_id );
 
         return true;
     }

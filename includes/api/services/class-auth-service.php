@@ -10,6 +10,37 @@
 if ( ! defined( 'ABSPATH' ) ) exit;
 
 class GFCM_Auth_Service {
+
+    /**
+     * Authenticate user credentials against WordPress
+     *
+     * @param string $username Username or Email
+     * @param string $password User password
+     * @return WP_User|WP_Error
+     */
+    public function authenticate_user( $username, $password ) {
+        // If the user passed an email instead of a username, resolve it first
+        if ( is_email( $username ) ) {
+            $user_obj = get_user_by( 'email', $username );
+            if ( $user_obj ) {
+                $username = $user_obj->user_login;
+            }
+        }
+
+        // Execute WordPress core authentication
+        $user = wp_authenticate( $username, $password );
+
+        if ( is_wp_error( $user ) ) {
+            return new WP_Error(
+                'invalid_credentials',
+                'Invalid username/email or password',
+                [ 'status' => 401 ]
+            );
+        }
+
+        return $user;
+    }
+    
     /**
      * check if reset key is valid
      * @param string $reset_key
