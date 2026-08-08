@@ -58,6 +58,10 @@ class GFCM_API_Routes {
                         'type'     => 'string',
                         'required' => true,
                     ],
+                    'password_confirmation' => [
+                        'type'     => 'string',
+                        'required' => true,
+                    ],
                     'email' => [
                         'type'     => 'string',
                         'required' => true,
@@ -103,11 +107,15 @@ class GFCM_API_Routes {
                         'type'     => 'string',
                         'required' => true,
                     ],
-                    'reset_key' => [
+                    'key' => [
                         'type'     => 'string',
                         'required' => true,
                     ],
-                    'new_password' => [
+                    'password' => [
+                        'type'     => 'string',
+                        'required' => true,
+                    ],
+                    'password_confirmation' => [
                         'type'     => 'string',
                         'required' => true,
                     ],

@@ -77,11 +77,6 @@ class GFCM_Auth_Controller {
      * @return WP_REST_Response|WP_Error
      */
     public function register( $request ) {
-        $username = $request->get_param( 'username' );
-        $password = $request->get_param( 'password' );
-        $email = $request->get_param( 'email' );
-        $first_name = $request->get_param( 'first_name' ) ?? '';
-        $last_name = $request->get_param( 'last_name' ) ?? '';
         $user_type = $request->get_param( 'user_type' ) ?? '';
 
         if ( ! in_array( $user_type, [ 'donor', 'fundraiser' ], true ) ) {
@@ -92,75 +87,51 @@ class GFCM_Auth_Controller {
             );
         }
 
-        // Validate required fields
-        if ( empty( $username ) || empty( $password ) || empty( $email ) ) {
-            return new WP_Error(
-                'missing_fields',
-                'Username, password, and email are required',
-                [ 'status' => 400 ]
-            );
-        }
-
-        // Validate email
-        if ( ! is_email( $email ) ) {
-            return new WP_Error(
-                'invalid_email',
-                'Invalid email format',
-                [ 'status' => 400 ]
-            );
-        }
-
-        // Check if username already exists
-        if ( username_exists( $username ) ) {
-            return new WP_Error(
-                'username_exists',
-                'Username already exists',
-                [ 'status' => 400 ]
-            );
-        }
-
-        // Check if email already exists
-        if ( email_exists( $email ) ) {
-            return new WP_Error(
-                'email_exists',
-                'Email already exists',
-                [ 'status' => 400 ]
-            );
-        }
+        
 
         // set user role based on user_type
         $role = ( 'fundraiser' === $user_type ) ? 'growfund_fundraiser' : 'growfund_donor';
 
         $user_data = [
-            'user_login' => $username,
-            'user_email' => $email,
-            'user_pass'  => $password,
-            'first_name' => $first_name,
-            'last_name'  => $last_name,
-            'display_name' => $first_name . ' ' . $last_name,
+            'first_name' => $request->get_param( 'first_name' ) ?? '',
+            'last_name'  => $request->get_param( 'last_name' ) ?? '',
+            'username' => $request->get_param( 'username' ) ?? '',
+            'email' => $request->get_param( 'email' ) ?? '',
+            'password'  => $request->get_param( 'password' ) ?? '',
+            'password_confirmation' => $request->get_param( 'password_confirmation' ) ?? '',
             'role'       => $role,
         ];
 
-        // Create user
-        $user_id = wp_insert_user( $user_data );
+        $validator = \Growfund\Validation\Validator::make($user_data, \Growfund\DTO\Auth\RegisterDTO::validation_rules());
 
-        if ( is_wp_error( $user_id ) ) {
+        if ($validator->is_failed()) {
             return new WP_Error(
-                'user_creation_failed',
-                'Failed to create user account',
-                [ 'status' => 500 ]
+                'validation_failed',
+                'Validation failed',
+                [
+                    'status' => 400,
+                    'errors' => $validator->get_errors(),
+                ]
             );
         }
 
-        // Update user meta
-        if ( ! empty( $first_name ) ) {
-            update_user_meta( $user_id, 'first_name', sanitize_text_field( $first_name ) );
+        $sanitized_data = /Growfund\Sanitizer::make($user_data, /Growfund/DTO/RegisterDTO::sanitization_rules())->get_sanitized_data();
+
+        $register_dto = new /Growfund/DTO/RegisterDTO($sanitized_data);
+
+        $result = $this->auth_service->register($register_dto);
+
+        if ( is_wp_error( $result ) ) {
+            return $result; // Returns WP_Error formatted by AuthService
         }
-        if ( ! empty( $last_name ) ) {
-            update_user_meta( $user_id, 'last_name', sanitize_text_field( $last_name ) );
-        }
+
+        $user_id = $result->ID;
+        $username = $result->user_login;
+        $email = $result->user_email;
+        $first_name = $result->first_name;
+        $last_name = $result->last_name;
+
         
-        update_user_meta( $user_id, 'growfund_created_at', current_time( 'mysql', 1 ) );
 
         // Generate tokens
         $access_token = GFCM_JWT_Handler::issue_token( $user_id, 'access' );
@@ -191,53 +162,38 @@ class GFCM_Auth_Controller {
      */
 
     public function password_reset_mail( $request ) {
-        $email = $request->get_param( 'email' );
+        $raw_data = [
+            'email' => $request->get_param( 'email' ),
+        ];
 
-        if ( empty( $email ) || ! is_email( $email ) ) {
+        $validator = Growfund\Validation\Validator::make( $raw_data, [
+            'email' => 'required|email',
+        ] );
+
+        if ( $validator->is_failed() ) {
             return new WP_Error(
-                'invalid_email',
-                'A valid email address is required',
-                [ 'status' => 400 ]
+                'validation_failed',
+                'Validation failed',
+                [
+                    'status' => 400,
+                    'errors' => $validator->get_errors(),
+                ]
             );
         }
 
-        $user = get_user_by( 'email', $email );
+        $sanitized_data = Growfund\Sanitizer::make( $raw_data, [
+            'email' => Growfund\Sanitizer::EMAIL,
+        ] )->get_sanitized_data();
 
-        if ( ! $user ) {
-            return new WP_Error(
-                'user_not_found',
-                'No user found with that email address',
-                [ 'status' => 404 ]
-            );
+        $result = $this->auth_service->send_password_reset_email( [
+            'email' => $sanitized_data['email'],
+        ] );
+
+        if ( is_wp_error( $result ) ) {
+            return $result; // Returns WP_Error formatted by AuthService
         }
 
-        delete_user_meta( $user->ID, 'growfund_password_reset_key' );
-        delete_user_meta( $user->ID, 'growfund_password_reset_key_consumed' );
-
-        // Generate password reset key
-        $reset_key = get_password_reset_key( $user );
-
-        if ( is_wp_error( $reset_key ) ) {
-            return new WP_Error(
-                'reset_key_failed',
-                'Failed to generate password reset key',
-                [ 'status' => 500 ]
-            );
-        }
-
-        update_user_meta( $user->ID, 'growfund_password_reset_key', $reset_key );
-
-        // Send password reset email
-        $mail = growfund_email( \Growfund\Mails\PasswordResetLinkMail::class );
-        $is_sent = $mail->with( [ 'user_id' => $user->ID ] )->send();
-
-        if ( ! $is_sent ) {
-            return new WP_Error(
-                'email_send_failed',
-                'Failed to send password reset email',
-                [ 'status' => 500 ]
-            );
-        }
+        
 
         return rest_ensure_response( [
             'success' => true,
@@ -252,46 +208,38 @@ class GFCM_Auth_Controller {
      * @return WP_REST_Response|WP_Error
      */
     public function reset_password( $request ) {
-        $login = $request->get_param( 'login' );
-        $reset_key = $request->get_param( 'reset_key' );
-        $new_password = $request->get_param( 'new_password' );
+        $raw_data = [
+            'login'                 => $request->get_param( 'login' ),
+            'key'                   => $request->get_param( 'key' ),
+            'password'              => $request->get_param( 'password' ),
+            'password_confirmation' => $request->get_param( 'password_confirmation' ),
+        ];
 
-        if ( empty( $login ) || empty( $reset_key ) || empty( $new_password ) ) {
+        $validator = \Growfund\Validation\Validator::make( $raw_data, \Growfund\DTO\Auth\ResetPasswordDTO::validation_rules() );
+
+        if ( $validator->is_failed() ) {
             return new WP_Error(
-                'missing_fields',
-                'login, reset key, and new password are required',
-                [ 'status' => 400 ]
+                'validation_failed',
+                'Validation failed',
+                [
+                    'status' => 400,
+                    'errors' => $validator->get_errors(),
+                ]
             );
         }
 
-        $user = get_user_by( 'login', $login );
+        $sanitized_data = \Growfund\Sanitizer::make( $raw_data, \Growfund\DTO\Auth\ResetPasswordDTO::sanitization_rules() )->get_sanitized_data();
 
-        
-        if ( ! $user ) {
-            return new WP_Error(
-                'user_not_found',
-                'No user found with that ID',
-                [ 'status' => 404 ]
-            );
+        // Instantiate the DTO
+        $reset_password_dto = new \Growfund\DTO\Auth\ResetPasswordDTO( $sanitized_data );
+
+        // Delegate ALL business logic to the Service (No need to duplicate get_user_by or key checks here)
+        $result = $this->auth_service->reset_password( $reset_password_dto );
+
+        // Handle Service errors
+        if ( is_wp_error( $result ) ) {
+            return $result; 
         }
-        
-        $user_id = $user->ID;
-
-        // Validate reset key
-        if ($this->auth_service->is_valid_reset_key($reset_key, $user_id) === false) {
-            return new WP_Error(
-                'invalid_reset_key',
-                'Invalid or expired reset key',
-                [ 'status' => 400 ]
-            );
-        }
-        
-
-        // Update password
-        wp_set_password( $new_password, $user_id );
-
-        // Mark reset key as consumed
-        update_user_meta( $user_id, 'growfund_password_reset_key_consumed', true );
 
         return rest_ensure_response( [
             'success' => true,
