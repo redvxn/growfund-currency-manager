@@ -3,9 +3,26 @@
  * Campaign Controller - Handles campaign endpoints
  */
 
+use Growfund\DTO\Campaign\CampaignFiltersDTO as CampaignFilterDTO;
+use Growfund\Services\CampaignService;
+use Growfund\Services\BookmarkService;
+use Growfund\DTO\JsonResponseDTO;
+use Growfund\PostTypes\Campaign;
+use Growfund\Validation\Validator;
+use Growfund\Views\Components\Campaign\CampaignList;
+
 if ( ! defined( 'ABSPATH' ) ) exit;
 
 class GFCM_Campaign_Controller {
+
+    protected $campaign_service;
+    protected $bookmark_service;
+
+    public function __construct()
+    {
+        $this->campaign_service = new CampaignService();
+        $this->bookmark_service = new BookmarkService();
+    }
 
     /**
      * Get all published campaigns
@@ -14,57 +31,27 @@ class GFCM_Campaign_Controller {
      * @return WP_REST_Response|WP_Error
      */
     public function get_campaigns( $request ) {
-        $page = max( 1, intval( $request->get_param( 'page' ) ?? 1 ) );
-        $per_page = max( 1, min( 100, intval( $request->get_param( 'per_page' ) ?? 20 ) ) );
-        $search = $request->get_param( 'search' ) ?? '';
-        $status = $request->get_param( 'status' ) ?? 'published';
+        $filters_dto = new CampaignFilterDTO();
+        $filters_dto->page = max( 1, intval( $request->get_param( 'page' ) ?? 1 ) );
+        $filters_dto->limit = max( 1, min( 100, intval( $request->get_param( 'per_page' ) ?? 20 ) ) );
+        $filters_dto->search = $request->get_param( 'search' ) ?? '';
+        $filters_dto->status = $request->get_param( 'status' ) ?? 'launched-and-beyond';
 
-        $offset = ( $page - 1 ) * $per_page;
+        $paginated = $this->campaign_service->paginated( $filters_dto );
 
-        // Query campaigns from Growfund posts
-        $args = [
-            'post_type'      => 'growfund_campaign', // Growfund post type
-            'post_status'    => [ $status ],
-            'posts_per_page' => $per_page,
-            'offset'         => $offset,
-            'orderby'        => 'date',
-            'order'          => 'DESC',
-            'meta_query'     => [
-                [
-                    'key'     => 'growfund_status',
-                    // 2. Pass the dynamic $status variable here instead of a hardcoded string
-                    'value'   => sanitize_text_field( $status ), 
-                    'compare' => '='
-                ]
-            ]
-        ];
+        $campaign_list = new CampaignList();
+        $campaign_list->campaigns = $paginated->results;
+        $campaign_list->classname = 'growfund-ajax-campaign-list';
 
-        // Add search filter if provided
-        if ( ! empty( $search ) ) {
-            $args['s'] = sanitize_text_field( $search );
-        }
+        $response_dto = new JsonResponseDTO([
+            'data' => $paginated,
+        ]);
 
-        $query = new WP_Query( $args );
-
-        // Build response data
-        $campaigns = [];
-        if ( $query->have_posts() ) {
-            while ( $query->have_posts() ) {
-                $query->the_post();
-                $campaigns[] = $this->format_campaign( get_the_ID() );
-            }
-            wp_reset_postdata();
-        }
+        
 
         return rest_ensure_response( [
             'success' => true,
-            'data'    => $campaigns,
-            'pagination' => [
-                'page'        => $page,
-                'per_page'    => $per_page,
-                'total'       => $query->found_posts,
-                'total_pages' => ceil( $query->found_posts / $per_page ),
-            ],
+            'data'    => $response_dto,
         ] );
     }
 
