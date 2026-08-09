@@ -311,18 +311,31 @@ class GFCM_Auth_Controller {
      * @return WP_REST_Response|WP_Error
      */
     public function current_user( $request ) {
-        $user_id = get_current_user_id();
+        // 1. Get the stateless user ID passed from the JWT middleware
+        $user_id = $request->get_param( 'jwt_user_id' );
 
         if ( ! $user_id ) {
             return new WP_Error(
                 'not_authenticated',
-                'User is not authenticated',
+                'User is not authenticated or token is missing',
                 [ 'status' => 401 ]
             );
         }
 
+        // 2. Fetch the user
         $user = get_user_by( 'ID', $user_id );
 
+        // 3. Prevent fatal errors if the user was deleted from the database 
+        // but their JWT token hasn't expired yet
+        if ( ! $user ) {
+            return new WP_Error(
+                'user_not_found',
+                'The user associated with this token no longer exists.',
+                [ 'status' => 404 ]
+            );
+        }
+
+        // 4. Return the response
         return rest_ensure_response( [
             'success'    => true,
             'user_id'    => $user->ID,

@@ -29,7 +29,7 @@ class GFCM_JWT_Middleware {
         // REMOVE THIS: wp_set_current_user( $user_id );
 
         // INSTEAD: Inject the user_id directly into the request attributes
-        $request->set_attribute( 'jwt_user_id', $user_id );
+        $request->set_param( 'jwt_user_id', $user_id );
 
         return true;
     }
