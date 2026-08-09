@@ -62,9 +62,9 @@ class GFCM_Campaign_Controller {
      * @return WP_REST_Response|WP_Error
      */
     public function get_campaign( $request ) {
-        $campaign_id = intval( $request->get_param( 'id' ) );
+        $id = intval( $request->get_param( 'id' ) );
 
-        if ( ! $campaign_id ) {
+        if ( ! $id ) {
             return new WP_Error(
                 'invalid_campaign_id',
                 'Campaign ID is required',
@@ -72,9 +72,9 @@ class GFCM_Campaign_Controller {
             );
         }
 
-        $campaign = get_post( $campaign_id );
+        $result = $this->campaign_service->get_by_id( $id );
 
-        if ( ! $campaign || 'growfund_campaign' !== $campaign->post_type ) {
+        if ( ! $result ) {
             return new WP_Error(
                 'campaign_not_found',
                 'Campaign not found',
@@ -82,21 +82,11 @@ class GFCM_Campaign_Controller {
             );
         }
 
-        // Fetch the custom Growfund status from post meta
-        $growfund_status = get_post_meta( $campaign_id, 'growfund_status', true );
-
-        // Check if published or user is owner/admin
-        if ( 'published' !== $growfund_status && ! current_user_can( 'edit_post', $campaign_id ) ) {
-            return new WP_Error(
-                'campaign_not_published',
-                'Campaign is not published',
-                [ 'status' => 403 ]
-            );
-        }
+        
 
         return rest_ensure_response( [
             'success' => true,
-            'data'    => $this->format_campaign_detail( $campaign_id ),
+            'data'    => $result,
         ] );
     }
 
