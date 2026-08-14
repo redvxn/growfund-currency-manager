@@ -248,6 +248,33 @@ class GFCM_Auth_Controller {
     }
 
     /**
+     * Exchange API Key for a short-lived System JWT
+     */
+    public function get_system_token( $request ) {
+        $client_api_key = $request->get_header( 'x_api_key' );
+        $server_api_key = defined( 'GROWFUND_CLIENT_API_KEY' ) ? GROWFUND_CLIENT_API_KEY : '';
+
+        // Validate the static API Key
+        if ( ! $server_api_key || ! hash_equals( $server_api_key, $client_api_key ) ) {
+            return new WP_Error(
+                'unauthorized_client',
+                'Invalid Client API Key',
+                [ 'status' => 401 ]
+            );
+        }
+
+        // Issue the 5-minute system token
+        $system_token = GFCM_JWT_Handler::issue_system_token();
+
+        return rest_ensure_response( [
+            'success'      => true,
+            'system_access_token' => $system_token,
+            'expires_in'   => 300, // 5 minutes in seconds
+            'token_type'   => 'Bearer'
+        ] );
+    }
+
+    /**
      * Refresh token endpoint
      *
      * @param WP_REST_Request $request The request object
@@ -335,6 +362,8 @@ class GFCM_Auth_Controller {
             );
         }
 
+        $data = get_metadata( 'user', $user_id );
+
         // 4. Return the response
         return rest_ensure_response( [
             'success'    => true,
@@ -344,6 +373,7 @@ class GFCM_Auth_Controller {
             'first_name' => get_user_meta( $user->ID, 'first_name', true ),
             'last_name'  => get_user_meta( $user->ID, 'last_name', true ),
             'avatar_url' => get_avatar_url( $user->ID ),
+            'data'       => $data, // Return all user meta data
         ] );
     }
 }

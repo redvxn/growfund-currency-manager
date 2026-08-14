@@ -35,6 +35,10 @@ class GFCM_Campaign_Controller {
         $filters_dto->page = max( 1, intval( $request->get_param( 'page' ) ?? 1 ) );
         $filters_dto->limit = max( 1, min( 100, intval( $request->get_param( 'per_page' ) ?? 20 ) ) );
         $filters_dto->search = $request->get_param( 'search' ) ?? '';
+        $filters_dto->category_slug = $request->get_param( 'category_slug' ) ?? '';
+        $filters_dto->orderby = $request->get_param( 'orderby' ) ?? 'date';
+        $filters_dto->order = $request->get_param( 'order' ) ?? '';
+        $filters_dto->is_featured = $request->get_param( 'is_featured' ) ?? '';
         $filters_dto->status = $request->get_param( 'status' ) ?? 'launched-and-beyond';
 
         $paginated = $this->campaign_service->paginated( $filters_dto );
@@ -52,6 +56,7 @@ class GFCM_Campaign_Controller {
         return rest_ensure_response( [
             'success' => true,
             'data'    => $response_dto,
+            'paginated' => $paginated,
         ] );
     }
 

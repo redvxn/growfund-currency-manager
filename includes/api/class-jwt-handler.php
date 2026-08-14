@@ -62,6 +62,25 @@ class GFCM_JWT_Handler {
     }
 
     /**
+     * Issue a short-lived System JWT for machine-to-machine requests
+     *
+     * @return string JWT token
+     */
+    public static function issue_system_token() {
+        // Very short expiry: 5 minutes
+        $expiry = 5 * MINUTE_IN_SECONDS; 
+
+        $payload = [
+            'type' => 'system', // Differentiate this from 'access' or 'refresh'
+            'iat'  => time(),
+            'exp'  => time() + $expiry,
+        ];
+
+        // Utilize your existing private encode method
+        return self::encode( $payload ); 
+    }
+
+    /**
      * Validate a JWT token
      *
      * @param string $token JWT token

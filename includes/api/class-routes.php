@@ -21,6 +21,16 @@ class GFCM_API_Routes {
      */
     public function register_routes() {
         // ===== Auth Routes (Public) =====
+
+        register_rest_route(
+            $this->namespace,
+            '/auth/system-token',
+            [
+                'methods'             => 'POST',
+                'callback'            => [ new GFCM_Auth_Controller(), 'get_system_token' ],
+                'permission_callback' => '__return_true', // Validation happens inside the controller
+            ]
+        );
         
         register_rest_route(
             $this->namespace,
@@ -157,7 +167,7 @@ class GFCM_API_Routes {
             [
                 'methods'             => 'GET',
                 'callback'            => [ new GFCM_Campaign_Controller(), 'get_campaigns' ],
-                'permission_callback' => '__return_true', // Public
+                'permission_callback' => [ 'GFCM_Combined_Auth_Middleware', 'validate' ], // Public
                 'args'                => [
                     'page' => [
                         'type' => 'integer',
@@ -167,6 +177,18 @@ class GFCM_API_Routes {
                     ],
                     'search' => [
                         'type' => 'string',
+                    ],
+                    'category_slug' => [
+                        'type' => 'string',
+                    ],
+                    'orderby' => [
+                        'type' => 'string',
+                    ],
+                    'order' => [
+                        'type' => 'string',
+                    ],
+                    'is_featured' => [
+                        'type' => 'integer',
                     ],
                     'status' => [
                         'type' => 'string',
@@ -192,7 +214,7 @@ class GFCM_API_Routes {
 
         // ===== Donation Routes (Protected) =====
 
-        // 1. GET donations made by the current user (Donor or Fundraiser)
+        // 1. GET all donations 
         register_rest_route(
             $this->namespace,
             '/donations',
@@ -208,6 +230,78 @@ class GFCM_API_Routes {
                         'type' => 'integer',
                     ],
                     'status' => [
+                        'type' => 'string',
+                    ],
+                    'search' => [
+                        'type' => 'string',
+                    ],
+                    'campaign_id' => [
+                        'type' => 'integer',
+                    ],
+                    'fund_id' => [
+                        'type' => 'integer',
+                    ],
+                    'start_date' => [
+                        'type' => 'string',
+                    ],
+                    'end_date' => [
+                        'type' => 'string',
+                    ],
+                    'user_id' => [
+                        'type' => 'integer',
+                    ],
+                    'orderby' => [
+                        'type' => 'string',
+                    ],
+                    'order' => [
+                        'type' => 'string',
+                    ],
+                ],
+            ]
+        );
+
+        // ===== Donation Routes (Protected) =====
+
+        // 1. GET paginated donations made by the current user (Donor or Fundraiser)
+        register_rest_route(
+            $this->namespace,
+            '/donations/paginated',
+            [
+                'methods'             => 'GET',
+                'callback'            => [ new GFCM_Donation_Controller(), 'get_paginated_onations' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'page' => [
+                        'type' => 'integer',
+                    ],
+                    'per_page' => [
+                        'type' => 'integer',
+                    ],
+                    'status' => [
+                        'type' => 'string',
+                    ],
+                    'search' => [
+                        'type' => 'string',
+                    ],
+                    'campaign_id' => [
+                        'type' => 'integer',
+                    ],
+                    'fund_id' => [
+                        'type' => 'integer',
+                    ],
+                    'start_date' => [
+                        'type' => 'string',
+                    ],
+                    'end_date' => [
+                        'type' => 'string',
+                    ],
+                    'user_id' => [
+                        'type' => 'integer',
+                    ],
+                    'orderby' => [
+                        'type' => 'string',
+                    ],
+                    'order' => [
                         'type' => 'string',
                     ],
                 ],

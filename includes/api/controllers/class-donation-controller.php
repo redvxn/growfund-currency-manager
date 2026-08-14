@@ -3,74 +3,109 @@
  * Donation Controller - Handles donation retrieval endpoints
  */
 
+use Growfund\DTO\Donation\DonationFilterParamsDTO;
+use Growfund\Services\DonationService;
+use Growfund\Policies\DonationPolicy;
+use Growfund\DTO\PaginatedCollectionDTO;
+use Growfund\DTO\Donation\DonationDTO;
+
 if ( ! defined( 'ABSPATH' ) ) exit;
 
 class GFCM_Donation_Controller {
 
-    // ==================================================
-    // 1. GET ALL DONATIONS (Combined Donor & Fundraiser Feed)
-    // Route: GET /donations
-    // ==================================================
-    public function get_donations( $request ) {
-        $user_id = get_current_user_id();
-        $user = wp_get_current_user();
+    /**
+     * DonationService instance.
+     *
+     * @var DonationService
+     */
+    protected $service;
+    protected $policy;
 
-        // Check roles
-        $roles = (array) $user->roles;
-        $is_donor = in_array( 'growfund_donor', $roles );
-        $is_fundraiser = in_array( 'growfund_fundraiser', $roles );
-        $is_admin = current_user_can( 'administrator' );
+    private $donation_service;
+    
+    /**
+     * Initialize the controller with DonationService.
+     */
+    public function __construct(DonationService $service, DonationPolicy $policy)
+    {
+        $this->service = $service;
+        $this->policy = $policy;
+        $this->donation_service = new GFCM_Donation_Service();
+        
+    }
 
-        if ( ! $is_donor && ! $is_fundraiser && ! $is_admin ) {
-            return new WP_Error( 'unauthorized', 'You do not have permission to view this data.', [ 'status' => 403 ] );
-        }
 
-        $page     = max( 1, intval( $request->get_param( 'page' ) ?? 1 ) );
-        $per_page = max( 1, min( 100, intval( $request->get_param( 'per_page' ) ?? 20 ) ) );
-        $status   = $request->get_param( 'status' );
+    /**
+     * GET ALL DONATIONS
+     *
+     * @param WP_REST_Request $request The request object
+     * @return WP_REST_Response|WP_Error
+     */
 
-        $args = [
-            'status'       => $status,
-            'page'         => $page,
-            'per_page'     => $per_page,
-            'donor_id'     => null,
-            'campaign_ids' => []
-        ];
+    public function get_all_donations( $request ) {
 
-        // If the user is an Admin, bypass the user filters so they can see ALL donations in the system
-        if ( ! $is_admin ) {
-            
-            // Rule 1: Always fetch donations this user made themselves
-            $args['donor_id'] = $user_id;
+        // $this->policy->authorize_paginated();
+        $dto = new DonationFilterParamsDTO();
 
-            // Rule 2: If they are a Fundraiser, ALSO fetch all donations made to their campaigns
-            if ( $is_fundraiser ) {
-                global $wpdb;
-                // Forcefully query the database to guarantee we find the campaigns (bypasses get_posts issues)
-                $user_campaigns = $wpdb->get_col( $wpdb->prepare( 
-                    "SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = 'growfund_fundraiser_id' AND meta_value = %s", 
-                    $user_id 
-                ) );
-                
-                if ( ! empty( $user_campaigns ) ) {
-                    $args['campaign_ids'] = array_map( 'intval', $user_campaigns );
-                }
-            }
-        }
+        $dto->page = max( 1, intval( $request->get_param( 'page' ) ?? 1 ) );
+        $dto->limit = max( 1, min( 100, intval( $request->get_param( 'per_page' ) ?? 20 ) ) );
+        $dto->search = $request->get_param( 'search' ) ?? '';
+        $dto->campaign_id = $request->get_param( 'campaign_id' ) ?? '';
+        $dto->fund_id = $request->get_param( 'fund_id' ) ?? '';
+        $dto->status = $request->get_param( 'status' ) ?? '';
+        $dto->start_date = $request->get_param( 'start_date' ) ?? '';
+        $dto->end_date = $request->get_param( 'end_date' ) ?? '';
+        $dto->user_id = $request->get_param( 'user_id' ) ?? '';
+        $dto->orderby = $request->get_param( 'orderby' ) ?? '';
+        $dto->order = $request->get_param( 'order' ) ?? '';
 
-        $donations = $this->query_donations( $args );
+        $donations = $this->service->all($dto);
+
+
 
         return rest_ensure_response( [
-            'success'    => true,
-            'data'       => $donations['items'],
-            'pagination' => [
-                'page'        => $page,
-                'per_page'    => $per_page,
-                'total'       => $donations['total'],
-                'total_pages' => ceil( $donations['total'] / $per_page ),
-            ],
+            'success' => true,
+            'data'    => $donations,
         ] );
+
     }
+
+    /**
+     * GET PAGINATED DONATIONS
+     *
+     * @param WP_REST_Request $request The request object
+     * @return WP_REST_Response|WP_Error
+     */
+
+    public function get_paginated_donations( $request ) {
+
+        // $this->policy->authorize_paginated();
+        $dto = new DonationFilterParamsDTO();
+
+        $dto->page = max( 1, intval( $request->get_param( 'page' ) ?? 1 ) );
+        $dto->limit = max( 1, min( 100, intval( $request->get_param( 'per_page' ) ?? 20 ) ) );
+        $dto->search = $request->get_param( 'search' ) ?? '';
+        $dto->campaign_id = $request->get_param( 'campaign_id' ) ?? '';
+        $dto->fund_id = $request->get_param( 'fund_id' ) ?? '';
+        $dto->status = $request->get_param( 'status' ) ?? '';
+        $dto->start_date = $request->get_param( 'start_date' ) ?? '';
+        $dto->end_date = $request->get_param( 'end_date' ) ?? '';
+        $dto->user_id = $request->get_param( 'user_id' ) ?? '';
+        $dto->orderby = $request->get_param( 'orderby' ) ?? '';
+        $dto->order = $request->get_param( 'order' ) ?? '';
+
+        $donations = $this->service->paginated($dto);
+
+
+
+        return rest_ensure_response( [
+            'success' => true,
+            'data'    => $donations,
+        ] );
+
+    }
+
+    
 
     // ==================================================
     // 2. GET DONATIONS BY CAMPAIGN (Fundraiser Only)
@@ -140,7 +175,7 @@ class GFCM_Donation_Controller {
     // ==================================================
     public function get_donation( $request ) {
         $donation_id = intval( $request->get_param( 'id' ) );
-        $donation = $this->get_donation_by_id( $donation_id );
+        $donation = $this->service->get_by_id( $donation_id );
 
         if ( ! $donation ) {
             return new WP_Error( 'donation_not_found', 'Donation not found', [ 'status' => 404 ] );
