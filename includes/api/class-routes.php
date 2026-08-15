@@ -308,6 +308,48 @@ class GFCM_API_Routes {
             ]
         );
 
+        // ===== Donor Routes (Protected) =====
+
+        // 1. GET paginated donations made by the current user (Donor or Fundraiser)
+        register_rest_route(
+            $this->namespace,
+            '/donors/paginated',
+            [
+                'methods'             => 'GET',
+                'callback'            => [ new GFCM_Donor_Controller(), 'get_paginated_donors' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'page' => [
+                        'type' => 'integer',
+                    ],
+                    'per_page' => [
+                        'type' => 'integer',
+                    ],
+                    'status' => [
+                        'type' => 'string',
+                    ],
+                    'search' => [
+                        'type' => 'string',
+                    ],
+                    'campaign_id' => [
+                        'type' => 'integer',
+                    ],
+                    'start_date' => [
+                        'type' => 'string',
+                    ],
+                    'end_date' => [
+                        'type' => 'string',
+                    ],
+                    'orderby' => [
+                        'type' => 'string',
+                    ],
+                    'order' => [
+                        'type' => 'string',
+                    ],
+                ],
+            ]
+        );
+
         // 2. GET a single donation by ID
         register_rest_route(
             $this->namespace,
