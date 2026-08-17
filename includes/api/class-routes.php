@@ -167,7 +167,7 @@ class GFCM_API_Routes {
             [
                 'methods'             => 'GET',
                 'callback'            => [ new GFCM_Campaign_Controller(), 'get_campaigns' ],
-                'permission_callback' => [ 'GFCM_Combined_Auth_Middleware', 'validate' ], // Public
+                'permission_callback' => [ 'GFCM_Combined_Auth_Middleware', 'validate' ], // Protected
                 'args'                => [
                     'page' => [
                         'type' => 'integer',
@@ -203,7 +203,7 @@ class GFCM_API_Routes {
             [
                 'methods'             => 'GET',
                 'callback'            => [ new GFCM_Campaign_Controller(), 'get_campaign' ],
-                'permission_callback' => '__return_true', // Public
+                'permission_callback' => [ 'GFCM_Combined_Auth_Middleware', 'validate' ], // Protected
                 'args'                => [
                     'id' => [
                         'type' => 'integer',
