@@ -40,15 +40,19 @@ require_once GFCM_PLUGIN_DIR . 'includes/class-gfcm-export-donations.php';
 // Include API Infrastructure
 require_once GFCM_PLUGIN_DIR . 'includes/api/class-jwt-handler.php';
 require_once GFCM_PLUGIN_DIR . 'includes/api/middleware/class-jwt-middleware.php';
+require_once GFCM_PLUGIN_DIR . 'includes/api/middleware/class-combined-auth-middleware.php';
 
 // Include API Controllers
 require_once GFCM_PLUGIN_DIR . 'includes/api/controllers/class-auth-controller.php';
 require_once GFCM_PLUGIN_DIR . 'includes/api/controllers/class-campaign-controller.php';
 require_once GFCM_PLUGIN_DIR . 'includes/api/controllers/class-donation-controller.php';
+require_once GFCM_PLUGIN_DIR . 'includes/api/controllers/class-donor-controller.php';
 require_once GFCM_PLUGIN_DIR . 'includes/api/controllers/class-checkout-controller.php';
+require_once GFCM_PLUGIN_DIR . 'includes/api/controllers/class-media-controller.php';
 
 // Include API Sevices
 require_once GFCM_PLUGIN_DIR . 'includes/api/services/class-auth-service.php';
+require_once GFCM_PLUGIN_DIR . 'includes/api/services/class-donation-service.php';
 
 // Include API Routes
 require_once GFCM_PLUGIN_DIR . 'includes/api/class-routes.php';

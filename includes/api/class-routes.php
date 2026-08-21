@@ -212,6 +212,145 @@ class GFCM_API_Routes {
             ]
         );
 
+        // ===== Media Upload Routes (Protected) =====
+
+        register_rest_route(
+            $this->namespace,
+            '/media',
+            [
+                'methods'             => 'POST',
+                'callback'            => [ new GFCM_Media_Controller(), 'upload_media' ],
+                // Protect this route to ensure only authenticated users can upload
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], 
+            ]
+        );
+
+        // ===== Create a campaign (Protected) =====
+
+        register_rest_route(
+            $this->namespace,
+            '/campaigns/create',
+            [
+                'methods'             => 'POST',
+                'callback'            => [ new GFCM_Campaign_Controller(), 'create_campaign' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+            ]
+        );
+
+        // ===== Update a campaign (Protected) =====
+
+        register_rest_route(
+            $this->namespace,
+            '/campaigns/(?P<id>\d+)/update',
+            [
+                'methods'             => 'POST',
+                'callback'            => [ new GFCM_Campaign_Controller(), 'update_campaign' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'id' => [
+                        'type' => 'integer',
+                    ],
+                    'title' => [
+                        'type' => 'string',
+                    ],
+                    'slug' => [
+                        'type' => 'string',
+                    ],
+                    'description' => [
+                        'type' => 'string',
+                    ],
+                    'story' => [
+                        'type' => 'string',
+                    ],
+                    'images' => [
+                        'type' => 'array',
+                    ],
+                    'video' => [
+                        'type' => 'array',
+
+                    ],
+                    'is_featured' => [
+                        'type' => 'boolean',
+                    ],
+                    'category' => [
+                        'type' => 'integer',
+                    ],
+                    'sub_category' => [
+                        'type' => 'integer',
+                    ],
+                    'start_date' => [
+                        'type' => 'string',
+                    ],
+                    'end_date' => [
+                        'type' => 'string',
+                    ],
+                    'location' => [
+                        'type' => 'string',
+                    ],
+                    'tags' => [
+                        'type' => 'string',
+                    ],
+                    'fundraiser_id' => [
+                        'type' => 'string',
+                    ],
+                    'collaborators' => [
+                        'type' => 'array',
+                    ],
+                    'show_collaborator_list' => [
+                        'type' => 'boolean',
+                    ],
+                    'status' => [
+                        'type' => 'string',
+                    ],
+                    'risk' => [
+                        'type' => 'string',
+                    ],
+                    'has_goal' => [
+                        'type' => 'boolean',
+                    ],
+                    'goal_type' => [
+                        'type' => 'string',
+                    ],
+                    'reaching_action' => [
+                        'type' => 'string',
+                    ],
+                    'confirmation_title' => [
+                        'type' => 'string',
+                    ],
+                    'confirmation_description' => [
+                        'type' => 'string',
+                    ],
+                    'provide_confirmation_pdf_receipt' => [
+                        'type' => 'boolean'
+                    ],
+                    'goal_amount' => [
+                        'type' => 'number'
+                    ],
+                    'allow_custom_donation' => [
+                        'type' => 'boolean'
+                    ],
+                    'min_donation_amount' => [
+                        'type' => 'string'
+                    ],
+                    'max_donation_amount' => [
+                        'type' => 'string'
+                    ],
+                    'suggested_option_type' => [
+                        'type' => "string"
+                    ],
+                    'suggested_options' => [
+                        'type' => 'array'
+                    ],
+                    'faqs' => [
+                        'type' => 'array'
+                    ],
+                    'author_id' => [
+                        'type' => 'integer'
+                    ],
+                ],
+            ]
+        );
+
         // ===== Donation Routes (Protected) =====
 
         // 1. GET all donations 
