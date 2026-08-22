@@ -21,6 +21,7 @@ class GFCM_Donor_Controller {
 
     protected $service;
     protected $donation_service;
+    
 
     public function __construct() {
         $this->service = new DonorService();

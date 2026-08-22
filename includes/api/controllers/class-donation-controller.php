@@ -105,6 +105,46 @@ class GFCM_Donation_Controller {
 
     }
 
+    /**
+     * GET Currencies
+     * @param WP_REST_Request $request The request object
+     * @return WP_REST_Response|WP_Error
+     */
+
+    public function get_currencies( $request ) {
+        $currencies = $this->donation_service->all_currencies();
+
+        if ( is_wp_error( $currencies ) ) {
+            return $currencies;
+        }
+
+        return rest_ensure_response( [
+            'success' => true,
+            'data'    => $currencies,
+        ] );
+
+    }
+
+    /**
+     * GET Gateway & Platform rates
+     * @param WP_REST_Request $request The request object
+     * @return WP_REST_Response|WP_Error
+     */
+
+    public function get_gateway_and_platform_rates( $request ) {
+        $gprates = $this->donation_service->all_gateway_and_platform_rates();
+
+        if ( is_wp_error( $gprates ) ) {
+            return $gprates;
+        }
+
+        return rest_ensure_response( [
+            'success' => true,
+            'data'    => $gprates,
+        ] );
+
+    }
+
     
 
     // ==================================================
@@ -186,6 +226,8 @@ class GFCM_Donation_Controller {
             'data'    => $donation,
         ] );
     }
+
+
 
     // ==================================================
     // DATABASE QUERY ENGINE

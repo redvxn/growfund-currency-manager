@@ -447,6 +447,30 @@ class GFCM_API_Routes {
             ]
         );
 
+        // ===== Currency Routes (Protected) =====
+
+        // 1. GET all currencies
+        register_rest_route(
+            $this->namespace,
+            '/currencies',
+            [
+                'methods'             => 'GET',
+                'callback'            => [ new GFCM_Donation_Controller(), 'get_currencies' ],
+                'permission_callback' => [ 'GFCM_Combined_Auth_Middleware', 'validate' ], // Protected
+            ]
+        );
+
+        // ===== Platform Rates Routes (Protected) =====
+        register_rest_route(
+            $this->namespace,
+            '/platform-rates',
+            [
+                'methods'             => 'GET',
+                'callback'            => [ new GFCM_Donation_Controller(), 'get_gateway_and_platform_rates' ],
+                'permission_callback' => [ 'GFCM_Combined_Auth_Middleware', 'validate' ], // Protected
+            ]
+        );
+
         // ===== Donor Routes (Protected) =====
 
         // 1. GET paginated donations made by the current user (Donor or Fundraiser)
