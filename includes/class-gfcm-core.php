@@ -1765,80 +1765,262 @@ add_action( 'rest_api_init', function() {
     ) );
 } );
 
-
 function gfcm_mobile_handoff_endpoint( $request ) {
+    $params = $request->get_json_params();
+    
+    // Ensure we have the minimum data
+    if ( empty( $params['campaign_id'] ) || empty( $params['amount'] ) ) {
+        return new WP_Error( 'missing_data', 'Campaign ID and Amount are required.', array( 'status' => 400 ) );
+    }
+
+    $user_id = isset( $params['user_id'] ) ? intval( $params['user_id'] ) : 0;
+    $amount  = floatval( $params['amount'] );
+    $tip     = isset( $params['tip_amount'] ) ? floatval( $params['tip_amount'] ) : 0;
+
+    // --- THE FIX: Save directly to the database during the POST request! ---
+    if ( $user_id > 0 ) {
+        update_user_meta( $user_id, 'gfcm_mobile_prefill_amt', $amount );
+        update_user_meta( $user_id, 'gfcm_mobile_prefill_tip', $tip );
+    }
+
+    // Generate a secure, one-time-use token for the auto-login
+    $token = wp_generate_uuid4();
+    
+    // Package the requested data
+    $payload = array(
+        'campaign_id' => intval( $params['campaign_id'] ),
+        'amount'      => $amount,
+        'tip'         => $tip,
+        'user_id'     => $user_id,
+    );
+
+    // Save it to the database for exactly 15 minutes
+    set_transient( 'gfcm_mobile_' . $token, $payload, 15 * MINUTE_IN_SECONDS );
+
+    // Return the secure URL back to the App
+    $checkout_url = wc_get_checkout_url();
+    $secure_url   = add_query_arg( 'mobile_token', $token, $checkout_url );
+
+    return rest_ensure_response( array( 'checkout_url' => $secure_url ) );
+}
+
+// 2. Intercept the Webview Load & Apply the Session
+add_action( 'template_redirect', 'gfcm_process_mobile_handoff', 8 );
+function gfcm_process_mobile_handoff() {
+    if ( isset( $_GET['mobile_token'] ) ) {
+        $token   = sanitize_text_field( $_GET['mobile_token'] );
+        $payload = get_transient( 'gfcm_mobile_' . $token );
+
+        if ( $payload ) {
+            // A. SECURELY AUTO-LOGIN THE USER
+            if ( ! empty( $payload['user_id'] ) ) {
+                $user = get_user_by( 'id', $payload['user_id'] );
+                if ( $user ) {
+                    wp_clear_auth_cookie();
+                    wp_set_current_user( $user->ID );
+                    wp_set_auth_cookie( $user->ID, true );
+                }
+            } 
+
+            // B. INITIALIZE WOOCOMMERCE SESSION
+            if ( isset( WC()->session ) && ! WC()->session->has_session() ) {
+                WC()->session->set_customer_session_cookie( true );
+            }
+            WC()->session->set( 'custom_fude_campaign_id', $payload['campaign_id'] );
+            
+            // --- Fallback for Guest Checkouts (Who don't have a user_id) ---
+            if ( empty( $payload['user_id'] ) && isset( WC()->session ) ) {
+                $customer_id = WC()->session->get_customer_id();
+                set_transient( 'gfcm_guest_amt_' . $customer_id, $payload['amount'], 15 * MINUTE_IN_SECONDS );
+                set_transient( 'gfcm_guest_tip_' . $customer_id, $payload['tip'], 15 * MINUTE_IN_SECONDS );
+            }
+
+            // C. POPULATE THE CART
+            if ( isset( WC()->cart ) ) {
+                WC()->cart->empty_cart();
+                WC()->cart->add_to_cart( 661, 1 ); // Native Growfund Product
+                if ( function_exists('gfcm_get_tip_product_id') ) {
+                    WC()->cart->add_to_cart( gfcm_get_tip_product_id(), 1 ); 
+                }
+            }
+
+            WC()->session->save_data();
+
+            // D. DELETE THE TOKEN
+            delete_transient( 'gfcm_mobile_' . $token );
+
+            // E. REDIRECT TO STANDARD CHECKOUT
+            $clean_url = wc_get_checkout_url();
+            wp_safe_redirect( $clean_url );
+            exit;
+        }
+    }
+}
+// ============================================================
+// HEADLESS NEXT.JS CHECKOUT API
+// ============================================================
+//
+// This is intentionally separate from mobile-handoff.
+//
+// mobile-handoff:
+// Next.js/mobile -> WordPress checkout page
+//
+// process-checkout:
+// Next.js -> WooCommerce order -> payment gateway
+//
+// The second flow does NOT send the donor to the
+// WordPress checkout page.
+// ============================================================
+
+
+add_action( 'rest_api_init', 'gfcm_register_headless_checkout_routes' );
+
+function gfcm_register_headless_checkout_routes() {
+
+    register_rest_route(
+        'gfcm/v1',
+        '/checkout-gateways',
+        array(
+            'methods'             => 'GET',
+            'callback'            => 'gfcm_get_headless_checkout_gateways',
+            'permission_callback' => '__return_true',
+        )
+    );
+
+    register_rest_route(
+        'gfcm/v1',
+        '/process-checkout',
+        array(
+            'methods'             => 'POST',
+            'callback'            => 'gfcm_process_headless_checkout',
+            'permission_callback' => '__return_true',
+        )
+    );
+}
+
+
+// ============================================================
+// 1. RETURN AVAILABLE PAYMENT GATEWAYS
+// ============================================================
+
+function gfcm_get_headless_checkout_gateways( $request ) {
+
+    if ( ! class_exists( 'WooCommerce' ) ) {
+        return new WP_Error(
+            'woocommerce_missing',
+            'WooCommerce is not available.',
+            array( 'status' => 500 )
+        );
+    }
+
+    if ( ! function_exists( 'WC' ) ) {
+        return new WP_Error(
+            'woocommerce_missing',
+            'WooCommerce is not available.',
+            array( 'status' => 500 )
+        );
+    }
+
+    $available_gateways = WC()->payment_gateways()->get_available_payment_gateways();
+
+    $gateways = array();
+
+    /*
+     * These are the payment gateways already identified
+     * in the existing HiilBox code.
+     *
+     * We only expose these gateways to the Next.js frontend.
+     */
+    $allowed_gateways = array(
+        'zes_pay',
+        'edahab_pay',
+        'premier_wallet_pay',
+        'card_pay',
+    );
+
+    foreach ( $available_gateways as $gateway_id => $gateway ) {
+
+        if ( ! in_array( $gateway_id, $allowed_gateways, true ) ) {
+            continue;
+        }
+
+        if ( isset( $gateway->enabled ) && $gateway->enabled !== 'yes' ) {
+            continue;
+        }
+
+        $gateways[] = array(
+            'id'          => $gateway->id,
+            'title'       => wp_strip_all_tags( $gateway->get_title() ),
+            'description' => wp_strip_all_tags(
+                $gateway->get_description()
+            ),
+            'icon'        => isset( $gateway->icon )
+                ? esc_url_raw( $gateway->icon )
+                : '',
+        );
+    }
+
+    return rest_ensure_response(
+        array(
+            'success'  => true,
+            'gateways' => $gateways,
+        )
+    );
+}
+
+
+// ============================================================
+// 2. PROCESS HEADLESS CHECKOUT
+// ============================================================
+
+function gfcm_process_headless_checkout( $request ) {
+
+    if ( ! class_exists( 'WooCommerce' ) ) {
+        return new WP_Error(
+            'woocommerce_missing',
+            'WooCommerce is not available.',
+            array( 'status' => 500 )
+        );
+    }
+
+    if ( ! function_exists( 'wc_create_order' ) ) {
+        return new WP_Error(
+            'woocommerce_missing',
+            'WooCommerce order functions are not available.',
+            array( 'status' => 500 )
+        );
+    }
 
     $params = $request->get_json_params();
 
-    // ==========================================
-    // BASIC INPUT
-    // ==========================================
+    if ( ! is_array( $params ) ) {
+        return new WP_Error(
+            'invalid_request',
+            'Invalid checkout request.',
+            array( 'status' => 400 )
+        );
+    }
+
+
+    // --------------------------------------------------------
+    // BASIC VALIDATION
+    // --------------------------------------------------------
 
     $campaign_id = isset( $params['campaign_id'] )
         ? absint( $params['campaign_id'] )
         : 0;
 
     $amount = isset( $params['amount'] )
-        ? floatval( $params['amount'] )
+        ? (float) $params['amount']
         : 0;
 
     $tip_amount = isset( $params['tip_amount'] )
-        ? max( 0, floatval( $params['tip_amount'] ) )
+        ? (float) $params['tip_amount']
         : 0;
 
     $payment_method = isset( $params['payment_method'] )
-        ? sanitize_text_field( $params['payment_method'] )
+        ? sanitize_key( $params['payment_method'] )
         : '';
-
-    // ==========================================
-    // DONOR INFORMATION
-    // ==========================================
-
-    $first_name = isset( $params['first_name'] )
-        ? sanitize_text_field( $params['first_name'] )
-        : '';
-
-    $last_name = isset( $params['last_name'] )
-        ? sanitize_text_field( $params['last_name'] )
-        : '';
-
-    $email = isset( $params['email'] )
-        ? sanitize_email( $params['email'] )
-        : '';
-
-    $address = isset( $params['address'] )
-        ? sanitize_text_field( $params['address'] )
-        : '';
-
-    $address_2 = isset( $params['address_2'] )
-        ? sanitize_text_field( $params['address_2'] )
-        : '';
-
-    $city = isset( $params['city'] )
-        ? sanitize_text_field( $params['city'] )
-        : '';
-
-    $state = isset( $params['state'] )
-        ? sanitize_text_field( $params['state'] )
-        : '';
-
-    $zip_code = isset( $params['zip_code'] )
-        ? sanitize_text_field( $params['zip_code'] )
-        : '';
-
-    $country = isset( $params['country'] )
-        ? strtoupper( sanitize_text_field( $params['country'] ) )
-        : '';
-
-    $user_id = isset( $params['user_id'] )
-        ? absint( $params['user_id'] )
-        : 0;
-
-    $is_anonymous = ! empty( $params['is_anonymous'] );
-
-    // ==========================================
-    // VALIDATION
-    // ==========================================
 
     if ( ! $campaign_id ) {
         return new WP_Error(
@@ -1856,632 +2038,10 @@ function gfcm_mobile_handoff_endpoint( $request ) {
         );
     }
 
-    if ( ! $payment_method ) {
+    if ( $tip_amount < 0 ) {
         return new WP_Error(
-            'missing_payment_method',
-            'Payment method is required.',
-            array( 'status' => 400 )
-        );
-    }
-
-    if ( ! $first_name ) {
-        return new WP_Error(
-            'missing_first_name',
-            'First name is required.',
-            array( 'status' => 400 )
-        );
-    }
-
-    if ( ! $last_name ) {
-        return new WP_Error(
-            'missing_last_name',
-            'Last name is required.',
-            array( 'status' => 400 )
-        );
-    }
-
-    if ( ! is_email( $email ) ) {
-        return new WP_Error(
-            'invalid_email',
-            'A valid email address is required.',
-            array( 'status' => 400 )
-        );
-    }
-
-    if ( ! $address ) {
-        return new WP_Error(
-            'missing_address',
-            'Address is required.',
-            array( 'status' => 400 )
-        );
-    }
-
-    if ( ! $city ) {
-        return new WP_Error(
-            'missing_city',
-            'City is required.',
-            array( 'status' => 400 )
-        );
-    }
-
-    if ( ! $zip_code ) {
-        return new WP_Error(
-            'missing_zip',
-            'ZIP/postal code is required.',
-            array( 'status' => 400 )
-        );
-    }
-
-    if ( ! $country ) {
-        return new WP_Error(
-            'missing_country',
-            'Country is required.',
-            array( 'status' => 400 )
-        );
-    }
-
-    if ( ! get_post_status( $campaign_id ) ) {
-        return new WP_Error(
-            'campaign_not_found',
-            'Campaign could not be found.',
-            array( 'status' => 404 )
-        );
-    }
-
-    // ==========================================
-    // INITIALIZE WOOCOMMERCE
-    // ==========================================
-
-    try {
-
-        if (
-            function_exists( 'wc_load_cart' ) &&
-            (
-                ! isset( WC()->cart ) ||
-                ! WC()->cart
-            )
-        ) {
-            wc_load_cart();
-        }
-
-        if ( ! isset( WC()->session ) || ! WC()->session ) {
-            return new WP_Error(
-                'session_unavailable',
-                'WooCommerce session is unavailable.',
-                array( 'status' => 500 )
-            );
-        }
-
-        if ( ! WC()->session->has_session() ) {
-            WC()->session->set_customer_session_cookie( true );
-        }
-
-        // ==========================================
-        // SAVE GFCM SESSION VALUES
-        // ==========================================
-
-        WC()->session->set(
-            'custom_fude_campaign_id',
-            $campaign_id
-        );
-
-        WC()->session->set(
-            'custom_donation_amount',
-            $amount
-        );
-
-        WC()->session->set(
-            'custom_platform_tip',
-            $tip_amount
-        );
-
-        // ==========================================
-        // SAVE CUSTOMER INFORMATION
-        // ==========================================
-
-        if ( isset( WC()->customer ) && WC()->customer ) {
-
-            WC()->customer->set_billing_first_name( $first_name );
-            WC()->customer->set_billing_last_name( $last_name );
-            WC()->customer->set_billing_email( $email );
-            WC()->customer->set_billing_address_1( $address );
-            WC()->customer->set_billing_address_2( $address_2 );
-            WC()->customer->set_billing_city( $city );
-            WC()->customer->set_billing_state( $state );
-            WC()->customer->set_billing_postcode( $zip_code );
-            WC()->customer->set_billing_country( $country );
-
-            WC()->customer->save();
-        }
-
-        // ==========================================
-        // BUILD THE DONATION CART
-        // ==========================================
-
-        if ( ! isset( WC()->cart ) || ! WC()->cart ) {
-            return new WP_Error(
-                'cart_unavailable',
-                'WooCommerce cart is unavailable.',
-                array( 'status' => 500 )
-            );
-        }
-
-        WC()->cart->empty_cart();
-
-        // Existing Growfund internal donation product.
-        $added = WC()->cart->add_to_cart( 661, 1 );
-
-        if ( ! $added ) {
-            return new WP_Error(
-                'cart_add_failed',
-                'Unable to create the donation item.',
-                array( 'status' => 500 )
-            );
-        }
-
-        // Add the existing GFCM Platform Tip product.
-        if ( function_exists( 'gfcm_get_tip_product_id' ) ) {
-
-            $tip_product_id = gfcm_get_tip_product_id();
-
-            if ( $tip_product_id ) {
-                WC()->cart->add_to_cart(
-                    $tip_product_id,
-                    1
-                );
-            }
-        }
-
-        // Apply donation + tip prices.
-        WC()->cart->calculate_totals();
-
-        // ==========================================
-        // FIND THE PAYMENT GATEWAY
-        // ==========================================
-
-        $available_gateways =
-            WC()->payment_gateways()->get_available_payment_gateways();
-
-        if ( ! isset( $available_gateways[ $payment_method ] ) ) {
-
-            return new WP_Error(
-                'invalid_payment_method',
-                'The selected payment method is not available.',
-                array(
-                    'status' => 400,
-                    'gateway' => $payment_method,
-                )
-            );
-        }
-
-        $gateway = $available_gateways[ $payment_method ];
-
-        if (
-            ! $gateway->enabled ||
-            ! $gateway->is_available()
-        ) {
-            return new WP_Error(
-                'payment_method_unavailable',
-                'The selected payment method is currently unavailable.',
-                array( 'status' => 400 )
-            );
-        }
-
-        // ==========================================
-        // PREPARE WOOCOMMERCE ORDER DATA
-        // ==========================================
-
-        $posted_data = array(
-
-            'billing_first_name' => $first_name,
-            'billing_last_name'  => $last_name,
-            'billing_company'    => '',
-
-            'billing_country'    => $country,
-            'billing_address_1'  => $address,
-            'billing_address_2'  => $address_2,
-            'billing_city'       => $city,
-            'billing_state'      => $state,
-            'billing_postcode'  => $zip_code,
-            'billing_phone'      => '',
-
-            'shipping_first_name' => $first_name,
-            'shipping_last_name'  => $last_name,
-            'shipping_company'    => '',
-            'shipping_country'    => $country,
-            'shipping_address_1'  => $address,
-            'shipping_address_2'  => $address_2,
-            'shipping_city'       => $city,
-            'shipping_state'      => $state,
-            'shipping_postcode'  => $zip_code,
-
-            'payment_method' => $payment_method,
-
-            'terms' => 1,
-            'terms-field' => 1,
-
-            'createaccount' => 0,
-
-            'order_comments' => '',
-        );
-
-        WC()->session->set(
-            'chosen_payment_method',
-            $payment_method
-        );
-
-        WC()->session->save_data();
-
-        // ==========================================
-        // CREATE THE WOOCOMMERCE ORDER
-        // ==========================================
-
-        $checkout = WC()->checkout();
-
-        $order_id = $checkout->create_order(
-            $posted_data
-        );
-
-        if ( is_wp_error( $order_id ) ) {
-            throw new Exception(
-                $order_id->get_error_message()
-            );
-        }
-
-        $order_id = absint( $order_id );
-
-        if ( ! $order_id ) {
-            throw new Exception(
-                'WooCommerce failed to create the order.'
-            );
-        }
-
-        $order = wc_get_order( $order_id );
-
-        if ( ! $order ) {
-            throw new Exception(
-                'Unable to load the newly created WooCommerce order.'
-            );
-        }
-
-        // ==========================================
-        // SAVE GFCM ORDER META
-        // ==========================================
-
-        $order->update_meta_data(
-            '_fude_custom_campaign_id',
-            $campaign_id
-        );
-
-        $order->update_meta_data(
-            'growfund_is_anonymous',
-            $is_anonymous ? 1 : 0
-        );
-
-        $order->update_meta_data(
-            'Anonymous Donation',
-            $is_anonymous ? 'Yes' : 'No'
-        );
-
-        $order->save();
-
-        // ==========================================
-        // DIRECTLY INVOKE THE PAYMENT GATEWAY
-        // ==========================================
-
-        WC()->session->set(
-            'order_awaiting_payment',
-            $order_id
-        );
-
-        WC()->session->save_data();
-
-        $payment_result = $gateway->process_payment(
-            $order_id
-        );
-
-        if ( ! is_array( $payment_result ) ) {
-            throw new Exception(
-                'The payment gateway returned an invalid response.'
-            );
-        }
-
-        if (
-            isset( $payment_result['result'] ) &&
-            $payment_result['result'] === 'success'
-        ) {
-
-            $redirect = isset(
-                $payment_result['redirect']
-            )
-                ? esc_url_raw(
-                    $payment_result['redirect']
-                )
-                : '';
-
-            // Never allow the old WooCommerce checkout
-            // page to become the redirect target.
-            if ( $redirect ) {
-
-                $redirect_host =
-                    wp_parse_url(
-                        $redirect,
-                        PHP_URL_HOST
-                    );
-
-                $redirect_path =
-                    wp_parse_url(
-                        $redirect,
-                        PHP_URL_PATH
-                    );
-
-                $site_host =
-                    wp_parse_url(
-                        home_url(),
-                        PHP_URL_HOST
-                    );
-
-                if (
-                    $redirect_host === $site_host &&
-                    (
-                        strpos(
-                            $redirect_path,
-                            '/checkout'
-                        ) === 0 ||
-                        strpos(
-                            $redirect_path,
-                            '/cart'
-                        ) === 0
-                    )
-                ) {
-                    $redirect = '';
-                }
-            }
-
-            WC()->cart->empty_cart();
-
-            return rest_ensure_response(
-                array(
-                    'success'  => true,
-                    'result'   => 'success',
-                    'order_id' => $order_id,
-                    'redirect' => $redirect,
-                )
-            );
-        }
-
-        // ==========================================
-        // PAYMENT FAILURE
-        // ==========================================
-
-        $message = 'The payment could not be processed.';
-
-        if (
-            isset( $payment_result['messages'] )
-        ) {
-
-            $messages =
-                $payment_result['messages'];
-
-            if ( is_array( $messages ) ) {
-                $messages =
-                    implode(
-                        ' ',
-                        $messages
-                    );
-            }
-
-            $message =
-                wp_strip_all_tags(
-                    $messages
-                );
-        }
-
-        return new WP_Error(
-            'payment_failed',
-            $message,
-            array(
-                'status'   => 402,
-                'order_id' => $order_id,
-            )
-        );
-
-    } catch ( Throwable $e ) {
-
-        return new WP_Error(
-            'checkout_processing_failed',
-            $e->getMessage(),
-            array(
-                'status' => 500,
-            )
-        );
-    }
-}
-
-// ==========================================
-// CLEAR MOBILE SESSION AJAX
-// ==========================================
-add_action( 'wp_ajax_gfcm_clear_mobile_session', 'gfcm_clear_mobile_session_ajax' );
-add_action( 'wp_ajax_nopriv_gfcm_clear_mobile_session', 'gfcm_clear_mobile_session_ajax' );
-function gfcm_clear_mobile_session_ajax() {
-    check_ajax_referer( 'custom_checkout_nonce', 'nonce' );
-    
-    if ( is_user_logged_in() ) {
-        $user_id = get_current_user_id();
-        delete_user_meta( $user_id, 'gfcm_mobile_prefill_amt' );
-        delete_user_meta( $user_id, 'gfcm_mobile_prefill_tip' );
-    } else if ( isset( WC()->session ) ) {
-        $customer_id = WC()->session->get_customer_id();
-        delete_transient( 'gfcm_guest_amt_' . $customer_id );
-        delete_transient( 'gfcm_guest_tip_' . $customer_id );
-    }
-    
-    wp_die();
-}
-
-// ==========================================
-// DIRECT NEXT.JS CHECKOUT API
-// ==========================================
-//
-// This endpoint is different from mobile-handoff.
-//
-// mobile-handoff:
-//     Next.js -> WooCommerce checkout page
-//
-// process-checkout:
-//     Next.js -> create WooCommerce order -> payment gateway
-//
-// The donor never visits /checkout/.
-//
-
-add_action( 'rest_api_init', function() {
-
-    register_rest_route(
-        'gfcm/v1',
-        '/checkout-gateways',
-        array(
-            'methods'             => 'GET',
-            'callback'            => 'gfcm_api_get_checkout_gateways',
-            'permission_callback' => '__return_true',
-        )
-    );
-
-    register_rest_route(
-        'gfcm/v1',
-        '/process-checkout',
-        array(
-            'methods'             => 'POST',
-            'callback'            => 'gfcm_api_process_checkout',
-            'permission_callback' => '__return_true',
-        )
-    );
-
-} );
-
-
-// ==========================================
-// GET AVAILABLE PAYMENT GATEWAYS
-// ==========================================
-
-function gfcm_api_get_checkout_gateways() {
-
-    if ( ! function_exists( 'WC' ) || ! WC() ) {
-        return new WP_Error(
-            'woocommerce_unavailable',
-            'WooCommerce is not available.',
-            array(
-                'status' => 503,
-            )
-        );
-    }
-
-    try {
-
-        if (
-            function_exists( 'wc_load_cart' ) &&
-            (
-                ! isset( WC()->cart ) ||
-                ! WC()->cart
-            )
-        ) {
-            wc_load_cart();
-        }
-
-        $available_gateways =
-            WC()->payment_gateways()->get_available_payment_gateways();
-
-        $gateways = array();
-
-        foreach ( $available_gateways as $gateway ) {
-
-            if (
-                ! $gateway->enabled ||
-                ! $gateway->is_available()
-            ) {
-                continue;
-            }
-
-            $gateways[] = array(
-                'id'          => $gateway->id,
-                'title'       => wp_strip_all_tags(
-                    $gateway->get_title()
-                ),
-                'description' => wp_strip_all_tags(
-                    $gateway->get_description()
-                ),
-            );
-        }
-
-        return rest_ensure_response(
-            array(
-                'success'  => true,
-                'gateways' => $gateways,
-            )
-        );
-
-    } catch ( Throwable $e ) {
-
-        return new WP_Error(
-            'gateway_lookup_failed',
-            $e->getMessage(),
-            array(
-                'status' => 500,
-            )
-        );
-    }
-}
-// ==========================================
-// PROCESS NEXT.JS CHECKOUT DIRECTLY
-// ==========================================
-
-function gfcm_api_process_checkout( $request ) {
-
-    if ( ! function_exists( 'WC' ) || ! WC() ) {
-        return new WP_Error(
-            'woocommerce_unavailable',
-            'WooCommerce is not available.',
-            array( 'status' => 503 )
-        );
-    }
-
-    $params = $request->get_json_params();
-
-    // ------------------------------------------
-    // BASIC INPUT
-    // ------------------------------------------
-
-    $campaign_id = isset( $params['campaign_id'] )
-        ? absint( $params['campaign_id'] )
-        : 0;
-
-    $amount = isset( $params['amount'] )
-        ? floatval( $params['amount'] )
-        : 0;
-
-    $tip_amount = isset( $params['tip_amount'] )
-        ? max( 0, floatval( $params['tip_amount'] ) )
-        : 0;
-
-    $payment_method = isset( $params['payment_method'] )
-        ? sanitize_text_field( $params['payment_method'] )
-        : '';
-
-    // ------------------------------------------
-    // VALIDATE REQUIRED DATA
-    // ------------------------------------------
-
-    if ( ! $campaign_id ) {
-        return new WP_Error(
-            'missing_campaign_id',
-            'Campaign ID is required.',
-            array( 'status' => 400 )
-        );
-    }
-
-    if ( $amount <= 0 ) {
-        return new WP_Error(
-            'invalid_amount',
-            'Donation amount must be greater than zero.',
+            'invalid_tip',
+            'Invalid tip amount.',
             array( 'status' => 400 )
         );
     }
@@ -2494,17 +2054,30 @@ function gfcm_api_process_checkout( $request ) {
         );
     }
 
-    if ( ! get_post_status( $campaign_id ) ) {
+
+    // --------------------------------------------------------
+    // ONLY ALLOW THE KNOWN HIILBOX GATEWAYS
+    // --------------------------------------------------------
+
+    $allowed_gateways = array(
+        'zes_pay',
+        'edahab_pay',
+        'premier_wallet_pay',
+        'card_pay',
+    );
+
+    if ( ! in_array( $payment_method, $allowed_gateways, true ) ) {
         return new WP_Error(
-            'campaign_not_found',
-            'The selected campaign could not be found.',
-            array( 'status' => 404 )
+            'invalid_payment_method',
+            'The selected payment method is not supported.',
+            array( 'status' => 400 )
         );
     }
 
-    // ------------------------------------------
-    // SANITIZE DONOR DETAILS
-    // ------------------------------------------
+
+    // --------------------------------------------------------
+    // CUSTOMER INFORMATION
+    // --------------------------------------------------------
 
     $first_name = isset( $params['first_name'] )
         ? sanitize_text_field( $params['first_name'] )
@@ -2539,14 +2112,11 @@ function gfcm_api_process_checkout( $request ) {
         : '';
 
     $country = isset( $params['country'] )
-        ? strtoupper( sanitize_text_field( $params['country'] ) )
+        ? sanitize_text_field( $params['country'] )
         : '';
 
     $is_anonymous = ! empty( $params['is_anonymous'] );
 
-    // ------------------------------------------
-    // VALIDATE DONOR DETAILS
-    // ------------------------------------------
 
     if ( empty( $first_name ) ) {
         return new WP_Error(
@@ -2564,7 +2134,7 @@ function gfcm_api_process_checkout( $request ) {
         );
     }
 
-    if ( ! is_email( $email ) ) {
+    if ( empty( $email ) || ! is_email( $email ) ) {
         return new WP_Error(
             'invalid_email',
             'A valid email address is required.',
@@ -2604,237 +2174,240 @@ function gfcm_api_process_checkout( $request ) {
         );
     }
 
+
+    // --------------------------------------------------------
+    // CAMPAIGN VALIDATION
+    // --------------------------------------------------------
+
+    $campaign = get_post( $campaign_id );
+
+    if ( ! $campaign ) {
+        return new WP_Error(
+            'campaign_not_found',
+            'The selected campaign could not be found.',
+            array( 'status' => 404 )
+        );
+    }
+
+
+    // --------------------------------------------------------
+    // LOAD WOOCOMMERCE GATEWAYS
+    // --------------------------------------------------------
+
+    $available_gateways =
+        WC()->payment_gateways()->get_available_payment_gateways();
+
+    if (
+        ! isset( $available_gateways[ $payment_method ] )
+    ) {
+        return new WP_Error(
+            'gateway_unavailable',
+            'The selected payment method is currently unavailable.',
+            array( 'status' => 400 )
+        );
+    }
+
+    $gateway =
+        $available_gateways[ $payment_method ];
+
+
+    // --------------------------------------------------------
+    // CREATE ORDER
+    // --------------------------------------------------------
+
     try {
 
-        // ------------------------------------------
-        // INITIALIZE WOOCOMMERCE
-        // ------------------------------------------
+        $order = wc_create_order();
 
-        if (
-            function_exists( 'wc_load_cart' ) &&
-            (
-                ! isset( WC()->cart ) ||
-                ! WC()->cart
-            )
-        ) {
-            wc_load_cart();
+        if ( is_wp_error( $order ) ) {
+            return $order;
         }
 
-        if ( ! isset( WC()->session ) || ! WC()->session ) {
+        /*
+         * Logged-in user if one exists.
+         */
+        if ( is_user_logged_in() ) {
+            $order->set_customer_id(
+                get_current_user_id()
+            );
+        }
+
+
+        // ----------------------------------------------------
+        // BILLING INFORMATION
+        // ----------------------------------------------------
+
+        $order->set_billing_first_name(
+            $first_name
+        );
+
+        $order->set_billing_last_name(
+            $last_name
+        );
+
+        $order->set_billing_email(
+            $email
+        );
+
+        $order->set_billing_address_1(
+            $address
+        );
+
+        $order->set_billing_address_2(
+            $address_2
+        );
+
+        $order->set_billing_city(
+            $city
+        );
+
+        $order->set_billing_state(
+            $state
+        );
+
+        $order->set_billing_postcode(
+            $zip_code
+        );
+
+        $order->set_billing_country(
+            strtoupper( $country )
+        );
+
+
+        // ----------------------------------------------------
+        // ADD GROWFUND DONATION PRODUCT
+        // ----------------------------------------------------
+
+        $donation_product_id = 661;
+
+        $donation_product =
+            wc_get_product(
+                $donation_product_id
+            );
+
+        if ( ! $donation_product ) {
+
+            $order->delete(
+                true
+            );
+
             return new WP_Error(
-                'woocommerce_session_unavailable',
-                'WooCommerce session is unavailable.',
+                'donation_product_missing',
+                'The GrowFund donation product could not be found.',
                 array( 'status' => 500 )
             );
         }
 
-        if ( ! WC()->session->has_session() ) {
-            WC()->session->set_customer_session_cookie( true );
-        }
 
-        // ------------------------------------------
-        // SET THE SAME GFCM SESSION DATA USED BY
-        // THE EXISTING WOOCOMMERCE CHECKOUT
-        // ------------------------------------------
+        /*
+         * Add the donation product.
+         *
+         * We set the line item price to the amount entered
+         * on the Next.js checkout page.
+         */
+        $donation_item =
+            new WC_Order_Item_Product();
 
-        WC()->session->set(
-            'custom_fude_campaign_id',
-            $campaign_id
+        $donation_item->set_product(
+            $donation_product
         );
 
-        WC()->session->set(
-            'custom_donation_amount',
+        $donation_item->set_quantity(
+            1
+        );
+
+        $donation_item->set_subtotal(
             $amount
         );
 
-        WC()->session->set(
-            'custom_platform_tip',
-            $tip_amount
+        $donation_item->set_total(
+            $amount
         );
 
-        // ------------------------------------------
-        // SET CUSTOMER DATA
-        // ------------------------------------------
-
-        if ( isset( WC()->customer ) && WC()->customer ) {
-
-            WC()->customer->set_billing_first_name( $first_name );
-            WC()->customer->set_billing_last_name( $last_name );
-            WC()->customer->set_billing_email( $email );
-            WC()->customer->set_billing_address_1( $address );
-            WC()->customer->set_billing_address_2( $address_2 );
-            WC()->customer->set_billing_city( $city );
-            WC()->customer->set_billing_state( $state );
-            WC()->customer->set_billing_postcode( $zip_code );
-            WC()->customer->set_billing_country( $country );
-
-            WC()->customer->save();
-        }
-
-        // ------------------------------------------
-        // BUILD THE DONATION CART
-        // ------------------------------------------
-
-        if ( ! WC()->cart ) {
-            return new WP_Error(
-                'cart_unavailable',
-                'WooCommerce cart is unavailable.',
-                array( 'status' => 500 )
-            );
-        }
-
-        WC()->cart->empty_cart();
-
         /*
-         * 661 = Growfund internal donation product.
-         *
-         * Your existing GFCM code already uses this
-         * product for the donation workflow.
+         * This metadata is important for GrowFund.
          */
-        $added = WC()->cart->add_to_cart( 661, 1 );
+        $donation_item->add_meta_data(
+            'campaign_id',
+            $campaign_id,
+            true
+        );
 
-        if ( ! $added ) {
-            return new WP_Error(
-                'donation_product_failed',
-                'Unable to create the donation cart item.',
-                array( 'status' => 500 )
-            );
-        }
+        $donation_item->add_meta_data(
+            '_fude_custom_campaign_id',
+            $campaign_id,
+            true
+        );
 
-        /*
-         * Keep the Platform Tip product in the cart.
-         * Your existing gfcm_custom_cart_prices()
-         * callback sets its actual price from the session.
-         */
-        if ( function_exists( 'gfcm_get_tip_product_id' ) ) {
+        $order->add_item(
+            $donation_item
+        );
 
-            $tip_product_id = gfcm_get_tip_product_id();
+
+        // ----------------------------------------------------
+        // ADD HIILBOX TIP
+        // ----------------------------------------------------
+
+        if ( $tip_amount > 0 ) {
+
+            $tip_product_id = 0;
+
+            if (
+                function_exists(
+                    'gfcm_get_tip_product_id'
+                )
+            ) {
+                $tip_product_id =
+                    absint(
+                        gfcm_get_tip_product_id()
+                    );
+            }
 
             if ( $tip_product_id ) {
-                WC()->cart->add_to_cart(
-                    $tip_product_id,
-                    1
-                );
+
+                $tip_product =
+                    wc_get_product(
+                        $tip_product_id
+                    );
+
+                if ( $tip_product ) {
+
+                    $tip_item =
+                        new WC_Order_Item_Product();
+
+                    $tip_item->set_product(
+                        $tip_product
+                    );
+
+                    $tip_item->set_quantity(
+                        1
+                    );
+
+                    $tip_item->set_subtotal(
+                        $tip_amount
+                    );
+
+                    $tip_item->set_total(
+                        $tip_amount
+                    );
+
+                    $tip_item->add_meta_data(
+                        '_gfcm_platform_tip',
+                        'yes',
+                        true
+                    );
+
+                    $order->add_item(
+                        $tip_item
+                    );
+                }
             }
         }
 
-        // Force the custom donation / tip prices.
-        WC()->cart->calculate_totals();
 
-        // ------------------------------------------
-        // VERIFY PAYMENT GATEWAY
-        // ------------------------------------------
-
-        $available_gateways =
-            WC()->payment_gateways()->get_available_payment_gateways();
-
-        if (
-            ! isset( $available_gateways[ $payment_method ] )
-        ) {
-            return new WP_Error(
-                'invalid_payment_method',
-                'The selected payment method is not available.',
-                array( 'status' => 400 )
-            );
-        }
-
-        $gateway = $available_gateways[ $payment_method ];
-
-        if ( ! $gateway->enabled || ! $gateway->is_available() ) {
-            return new WP_Error(
-                'payment_method_unavailable',
-                'The selected payment method is currently unavailable.',
-                array( 'status' => 400 )
-            );
-        }
-
-        // ------------------------------------------
-        // PREPARE DATA FOR WC_CHECKOUT::create_order()
-        // ------------------------------------------
-
-        $posted_data = array(
-
-            'billing_first_name' => $first_name,
-            'billing_last_name'  => $last_name,
-            'billing_company'    => '',
-            'billing_country'    => $country,
-            'billing_address_1'  => $address,
-            'billing_address_2'  => $address_2,
-            'billing_city'       => $city,
-            'billing_state'      => $state,
-            'billing_postcode'  => $zip_code,
-            'billing_phone'      => '',
-
-            'shipping_first_name' => $first_name,
-            'shipping_last_name'  => $last_name,
-            'shipping_company'    => '',
-            'shipping_country'    => $country,
-            'shipping_address_1'  => $address,
-            'shipping_address_2'  => $address_2,
-            'shipping_city'       => $city,
-            'shipping_state'      => $state,
-            'shipping_postcode'  => $zip_code,
-
-            'payment_method' => $payment_method,
-
-            'order_comments' => '',
-
-            'terms' => 1,
-            'terms-field' => 1,
-
-            'createaccount' => 0,
-
-            'shipping_method' => array(),
-
-            'ship_to_different_address' => 0,
-        );
-
-        // ------------------------------------------
-        // SAVE CUSTOMER PAYMENT METHOD SESSION
-        // ------------------------------------------
-
-        WC()->session->set(
-            'chosen_payment_method',
-            $payment_method
-        );
-
-        WC()->session->save_data();
-
-        // ------------------------------------------
-        // CREATE THE WOOCOMMERCE ORDER
-        // ------------------------------------------
-
-        $checkout = WC()->checkout();
-
-        $order_id = $checkout->create_order(
-            $posted_data
-        );
-
-        if ( is_wp_error( $order_id ) ) {
-            throw new Exception(
-                $order_id->get_error_message()
-            );
-        }
-
-        $order_id = absint( $order_id );
-
-        if ( ! $order_id ) {
-            throw new Exception(
-                'WooCommerce could not create the order.'
-            );
-        }
-
-        $order = wc_get_order( $order_id );
-
-        if ( ! $order ) {
-            throw new Exception(
-                'WooCommerce order could not be loaded.'
-            );
-        }
-
-        // ------------------------------------------
-        // SAVE GFCM / ANONYMOUS DATA
-        // ------------------------------------------
+        // ----------------------------------------------------
+        // ORDER META
+        // ----------------------------------------------------
 
         $order->update_meta_data(
             '_fude_custom_campaign_id',
@@ -2842,138 +2415,278 @@ function gfcm_api_process_checkout( $request ) {
         );
 
         $order->update_meta_data(
-            'growfund_is_anonymous',
-            $is_anonymous ? 1 : 0
+            '_gfcm_campaign_id',
+            $campaign_id
         );
 
         $order->update_meta_data(
-            'Anonymous Donation',
-            $is_anonymous ? 'Yes' : 'No'
+            '_gfcm_donation_amount',
+            $amount
         );
+
+        $order->update_meta_data(
+            '_gfcm_tip_amount',
+            $tip_amount
+        );
+
+        $order->update_meta_data(
+            '_gfcm_payment_method',
+            $payment_method
+        );
+
+        $order->update_meta_data(
+            '_gfcm_anonymous',
+            $is_anonymous ? 'yes' : 'no'
+        );
+
+
+        // ----------------------------------------------------
+        // PAYMENT METHOD
+        // ----------------------------------------------------
+
+        $order->set_payment_method(
+            $gateway
+        );
+
+        $order->set_payment_method_title(
+            $gateway->get_title()
+        );
+
+
+        // ----------------------------------------------------
+        // CALCULATE TOTAL
+        // ----------------------------------------------------
+
+        $order->calculate_totals();
 
         $order->save();
 
-        // ------------------------------------------
-        // RUN THE SAME GROWFUND ORDER HOOKS USED
-        // BY THE NORMAL WOOCOMMERCE CHECKOUT
-        // ------------------------------------------
 
-        do_action(
-            'woocommerce_checkout_order_processed',
-            $order_id,
-            $posted_data,
-            $order
-        );
-
-        // ------------------------------------------
-        // PROCESS PAYMENT DIRECTLY
+        // ----------------------------------------------------
+        // MAKE GATEWAY PROCESS PAYMENT SEE THE SAME DATA
+        // ----------------------------------------------------
         //
-        // This is the critical part.
+        // Some gateways read their fields directly from
+        // $_POST instead of from the order.
         //
-        // The gateway gets the WooCommerce order ID
-        // directly. We DO NOT redirect to /checkout/.
-        // ------------------------------------------
+        // We expose the basic checkout values here so that
+        // traditional WooCommerce gateways can behave as
+        // they do during normal checkout.
+        // ----------------------------------------------------
 
-        WC()->session->set(
-            'order_awaiting_payment',
-            $order_id
-        );
+        $_POST['billing_first_name'] =
+            $first_name;
 
-        WC()->session->save_data();
+        $_POST['billing_last_name'] =
+            $last_name;
 
-        $result = $gateway->process_payment(
-            $order_id
-        );
+        $_POST['billing_email'] =
+            $email;
 
-        if ( ! is_array( $result ) ) {
+        $_POST['billing_address_1'] =
+            $address;
+
+        $_POST['billing_address_2'] =
+            $address_2;
+
+        $_POST['billing_city'] =
+            $city;
+
+        $_POST['billing_state'] =
+            $state;
+
+        $_POST['billing_postcode'] =
+            $zip_code;
+
+        $_POST['billing_country'] =
+            strtoupper( $country );
+
+        $_POST['payment_method'] =
+            $payment_method;
+
+
+        // ----------------------------------------------------
+        // PROCESS PAYMENT
+        // ----------------------------------------------------
+
+        $payment_result =
+            $gateway->process_payment(
+                $order->get_id()
+            );
+
+
+        if ( ! is_array( $payment_result ) ) {
+
+            $order->add_order_note(
+                'Headless checkout: payment gateway returned an invalid response.'
+            );
 
             return new WP_Error(
-                'invalid_gateway_response',
+                'payment_failed',
                 'The payment gateway returned an invalid response.',
-                array( 'status' => 500 )
+                array( 'status' => 400 )
             );
         }
 
+
+        // ----------------------------------------------------
+        // FAILURE
+        // ----------------------------------------------------
+
         if (
-            isset( $result['result'] ) &&
-            $result['result'] === 'success'
+            isset(
+                $payment_result['result']
+            ) &&
+            $payment_result['result'] === 'failure'
         ) {
 
-            $redirect = isset( $result['redirect'] )
-                ? $result['redirect']
-                : '';
+            $message =
+                'Payment could not be processed.';
 
-            /*
-             * IMPORTANT:
-             *
-             * A gateway redirect is allowed if it is an
-             * external payment provider.
-             *
-             * But never send the donor to the WordPress
-             * checkout page again.
-             */
             if (
-                $redirect &&
-                strpos(
-                    wp_parse_url( $redirect, PHP_URL_PATH ),
-                    '/checkout/'
-                ) === 0
+                isset(
+                    $payment_result['messages']
+                )
             ) {
-
-                return new WP_Error(
-                    'invalid_gateway_redirect',
-                    'The selected payment gateway attempted to redirect to the WordPress checkout page.',
-                    array( 'status' => 500 )
-                );
+                $message =
+                    wp_strip_all_tags(
+                        $payment_result['messages']
+                    );
             }
 
-            // WooCommerce will usually handle the payment
-            // status itself inside process_payment().
-            WC()->cart->empty_cart();
+            return new WP_Error(
+                'payment_failed',
+                $message,
+                array(
+                    'status' => 400,
+                    'order_id' => $order->get_id(),
+                )
+            );
+        }
+
+
+        // ----------------------------------------------------
+        // SUCCESS
+        // ----------------------------------------------------
+
+        if (
+            isset(
+                $payment_result['result']
+            ) &&
+            $payment_result['result'] === 'success'
+        ) {
+
+            $redirect =
+                isset(
+                    $payment_result['redirect']
+                )
+                ? $payment_result['redirect']
+                : '';
+
+
+            /*
+             * The gateway may return a redirect to the
+             * external payment provider.
+             *
+             * We preserve that redirect.
+             *
+             * We ONLY prevent redirects to the normal
+             * WordPress checkout page.
+             */
+
+            if (
+                ! empty( $redirect )
+            ) {
+
+                $checkout_url =
+                    function_exists(
+                        'wc_get_checkout_url'
+                    )
+                    ? wc_get_checkout_url()
+                    : '';
+
+                if (
+                    $checkout_url &&
+                    strpos(
+                        $redirect,
+                        $checkout_url
+                    ) === 0
+                ) {
+
+                    /*
+                     * Gateway returned the normal WC
+                     * checkout URL. Do not send the
+                     * Next.js customer there.
+                     */
+                    $redirect = '';
+                }
+            }
+
 
             return rest_ensure_response(
                 array(
                     'success'   => true,
                     'result'    => 'success',
-                    'order_id'  => $order_id,
+                    'order_id'  => $order->get_id(),
                     'redirect'  => $redirect,
+                    'message'   => 'Payment initialized successfully.',
                 )
             );
         }
 
-        // ------------------------------------------
-        // PAYMENT FAILED
-        // ------------------------------------------
-
-        $message = isset( $result['messages'] )
-            ? wp_strip_all_tags(
-                wp_kses_post(
-                    is_array( $result['messages'] )
-                        ? implode( ' ', $result['messages'] )
-                        : $result['messages']
-                )
-            )
-            : 'The payment gateway could not process the donation.';
 
         return new WP_Error(
-            'payment_failed',
-            $message,
+            'payment_unknown',
+            'The payment gateway returned an unexpected result.',
             array(
-                'status'   => 402,
-                'order_id' => $order_id,
+                'status'   => 400,
+                'order_id' => $order->get_id(),
             )
         );
+
 
     } catch ( Throwable $e ) {
 
+        if (
+            isset( $order ) &&
+            $order instanceof WC_Order
+        ) {
+            $order->add_order_note(
+                'Headless checkout exception: ' .
+                $e->getMessage()
+            );
+        }
+
         return new WP_Error(
-            'process_checkout_failed',
+            'checkout_exception',
+            'Unable to process the donation: ' .
             $e->getMessage(),
-            array( 'status' => 500 )
+            array(
+                'status' => 500,
+            )
         );
     }
 }
-
+// ==========================================
+// CLEAR MOBILE SESSION AJAX
+// ==========================================
+add_action( 'wp_ajax_gfcm_clear_mobile_session', 'gfcm_clear_mobile_session_ajax' );
+add_action( 'wp_ajax_nopriv_gfcm_clear_mobile_session', 'gfcm_clear_mobile_session_ajax' );
+function gfcm_clear_mobile_session_ajax() {
+    check_ajax_referer( 'custom_checkout_nonce', 'nonce' );
+    
+    if ( is_user_logged_in() ) {
+        $user_id = get_current_user_id();
+        delete_user_meta( $user_id, 'gfcm_mobile_prefill_amt' );
+        delete_user_meta( $user_id, 'gfcm_mobile_prefill_tip' );
+    } else if ( isset( WC()->session ) ) {
+        $customer_id = WC()->session->get_customer_id();
+        delete_transient( 'gfcm_guest_amt_' . $customer_id );
+        delete_transient( 'gfcm_guest_tip_' . $customer_id );
+    }
+    
+    wp_die();
+}
 
 // ==========================================
 // CLEAN UP SIFALO LABELS (CHECKOUT PAGE)
