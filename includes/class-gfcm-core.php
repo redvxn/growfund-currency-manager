@@ -3147,23 +3147,25 @@ function gfcm_clear_mobile_session_ajax() {
 
 add_action( 'rest_api_init', function() {
 
-    // ------------------------------------------
-    // GET AVAILABLE PAYMENT GATEWAYS
-    // ------------------------------------------
-    register_rest_route( 'gfcm/v1', '/checkout-gateways', array(
-        'methods'             => 'GET',
-        'callback'            => 'gfcm_api_get_checkout_gateways',
-        'permission_callback' => '__return_true',
-    ) );
+    register_rest_route(
+        'gfcm/v1',
+        '/checkout-gateways',
+        array(
+            'methods'             => 'GET',
+            'callback'            => 'gfcm_api_get_checkout_gateways',
+            'permission_callback' => '__return_true',
+        )
+    );
 
-    // ------------------------------------------
-    // PROCESS CHECKOUT DIRECTLY
-    // ------------------------------------------
-    register_rest_route( 'gfcm/v1', '/process-checkout', array(
-        'methods'             => 'POST',
-        'callback'            => 'gfcm_api_process_checkout',
-        'permission_callback' => '__return_true',
-    ) );
+    register_rest_route(
+        'gfcm/v1',
+        '/process-checkout',
+        array(
+            'methods'             => 'POST',
+            'callback'            => 'gfcm_api_process_checkout',
+            'permission_callback' => '__return_true',
+        )
+    );
 
 } );
 
@@ -3178,30 +3180,46 @@ function gfcm_api_get_checkout_gateways() {
         return new WP_Error(
             'woocommerce_unavailable',
             'WooCommerce is not available.',
-            array( 'status' => 503 )
+            array(
+                'status' => 503,
+            )
         );
     }
 
     try {
 
-        if ( function_exists( 'wc_load_cart' ) && ( ! isset( WC()->cart ) || ! WC()->cart ) ) {
+        if (
+            function_exists( 'wc_load_cart' ) &&
+            (
+                ! isset( WC()->cart ) ||
+                ! WC()->cart
+            )
+        ) {
             wc_load_cart();
         }
 
-        $available_gateways = WC()->payment_gateways()->get_available_payment_gateways();
+        $available_gateways =
+            WC()->payment_gateways()->get_available_payment_gateways();
 
         $gateways = array();
 
         foreach ( $available_gateways as $gateway ) {
 
-            if ( ! $gateway->enabled || ! $gateway->is_available() ) {
+            if (
+                ! $gateway->enabled ||
+                ! $gateway->is_available()
+            ) {
                 continue;
             }
 
             $gateways[] = array(
                 'id'          => $gateway->id,
-                'title'       => wp_strip_all_tags( $gateway->get_title() ),
-                'description' => wp_strip_all_tags( $gateway->get_description() ),
+                'title'       => wp_strip_all_tags(
+                    $gateway->get_title()
+                ),
+                'description' => wp_strip_all_tags(
+                    $gateway->get_description()
+                ),
             );
         }
 
@@ -3217,12 +3235,12 @@ function gfcm_api_get_checkout_gateways() {
         return new WP_Error(
             'gateway_lookup_failed',
             $e->getMessage(),
-            array( 'status' => 500 )
+            array(
+                'status' => 500,
+            )
         );
     }
 }
-
-
 // ==========================================
 // PROCESS NEXT.JS CHECKOUT DIRECTLY
 // ==========================================
