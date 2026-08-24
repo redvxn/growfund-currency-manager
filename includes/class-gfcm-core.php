@@ -2246,10 +2246,25 @@ $order->save();
 // PROCESS PAYMENT
 // ==========================================
 
+error_log(
+    'GFCM CHECKOUT: BEFORE process_payment - gateway=' .
+    $payment_method .
+    ' order=' .
+    $order_id
+);
+
+@set_time_limit(20);
+
 $payment_result = $gateway->process_payment(
     $order_id
 );
 
+error_log(
+    'GFCM CHECKOUT: AFTER process_payment - gateway=' .
+    $payment_method .
+    ' order=' .
+    $order_id
+);
 // ==========================================
 // NORMALIZE THE GATEWAY RESPONSE
 // ==========================================
