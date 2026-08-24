@@ -2564,30 +2564,93 @@ function gfcm_api_get_checkout_gateways() {
         return new WP_Error(
             'woocommerce_unavailable',
             'WooCommerce is not available.',
-            array( 'status' => 503 )
+            array(
+                'status' => 503,
+            )
         );
     }
 
     try {
 
-        if ( function_exists( 'wc_load_cart' ) && ( ! isset( WC()->cart ) || ! WC()->cart ) ) {
+        /*
+         * Load WooCommerce cart/session when this is a
+         * headless REST request.
+         */
+        if (
+            function_exists( 'wc_load_cart' ) &&
+            (
+                ! isset( WC()->cart ) ||
+                ! WC()->cart
+            )
+        ) {
             wc_load_cart();
         }
 
-        $available_gateways = WC()->payment_gateways()->get_available_payment_gateways();
+        /*
+         * Get the registered WooCommerce payment gateways.
+         *
+         * IMPORTANT:
+         * Do NOT call is_available() here.
+         *
+         * On a headless request there may not yet be a
+         * billing country/customer context, which can cause
+         * WooCommerce to incorrectly report a gateway as
+         * unavailable even though the gateway is enabled.
+         */
+        $payment_gateways =
+            WC()->payment_gateways()->payment_gateways();
 
         $gateways = array();
 
-        foreach ( $available_gateways as $gateway ) {
+        /*
+         * These are the actual HiilBox payment gateway IDs
+         * already used by the existing GFCM code.
+         */
+        $allowed_gateways = array(
+            'zes_pay',
+            'edahab_pay',
+            'premier_wallet_pay',
+            'card_pay',
+        );
 
-            if ( ! $gateway->enabled || ! $gateway->is_available() ) {
+        foreach ( $payment_gateways as $gateway_id => $gateway ) {
+
+            if (
+                ! in_array(
+                    $gateway_id,
+                    $allowed_gateways,
+                    true
+                )
+            ) {
+                continue;
+            }
+
+            /*
+             * Only expose gateways that are enabled.
+             */
+            if (
+                isset( $gateway->enabled ) &&
+                $gateway->enabled !== 'yes'
+            ) {
                 continue;
             }
 
             $gateways[] = array(
-                'id'          => $gateway->id,
-                'title'       => wp_strip_all_tags( $gateway->get_title() ),
-                'description' => wp_strip_all_tags( $gateway->get_description() ),
+                'id' => $gateway->id,
+
+                'title' => wp_strip_all_tags(
+                    $gateway->get_title()
+                ),
+
+                'description' => wp_strip_all_tags(
+                    $gateway->get_description()
+                ),
+
+                'icon' => isset( $gateway->icon )
+                    ? esc_url_raw(
+                        $gateway->icon
+                    )
+                    : '',
             );
         }
 
@@ -2600,14 +2663,20 @@ function gfcm_api_get_checkout_gateways() {
 
     } catch ( Throwable $e ) {
 
+        error_log(
+            'GFCM GATEWAY LIST ERROR: ' .
+            $e->getMessage()
+        );
+
         return new WP_Error(
             'gateway_lookup_failed',
             $e->getMessage(),
-            array( 'status' => 500 )
+            array(
+                'status' => 500,
+            )
         );
     }
 }
-
 
 // ==========================================
 // PROCESS NEXT.JS CHECKOUT DIRECTLY
