@@ -2176,67 +2176,247 @@ function gfcm_mobile_handoff_endpoint( $request ) {
 
         WC()->session->save_data();
 
-        $payment_result = $gateway->process_payment(
-            $order_id
+    
+// ==========================================
+// DIRECT GATEWAY PROCESSING
+// ==========================================
+
+// WooCommerce payment gateways often expect the
+// normal checkout POST variables to exist.
+//
+// Because this request comes from our Next.js REST
+// API instead of the native WooCommerce checkout,
+// we must provide those values explicitly.
+
+$gateway_post_data = array(
+    'billing_first_name' => $first_name,
+    'billing_last_name'  => $last_name,
+    'billing_email'      => $email,
+
+    'billing_country'    => $country,
+    'billing_address_1'  => $address,
+    'billing_address_2'  => $address_2,
+    'billing_city'       => $city,
+    'billing_state'      => $state,
+    'billing_postcode'   => $zip_code,
+    'billing_phone'      => '',
+
+    'shipping_first_name' => $first_name,
+    'shipping_last_name'  => $last_name,
+    'shipping_country'    => $country,
+    'shipping_address_1'  => $address,
+    'shipping_address_2'  => $address_2,
+    'shipping_city'       => $city,
+    'shipping_state'      => $state,
+    'shipping_postcode'   => $zip_code,
+
+    'payment_method' => $payment_method,
+
+    'terms'       => '1',
+    'terms-field' => '1',
+
+    'createaccount' => '0',
+
+    'order_comments' => '',
+);
+
+// Make the request look like a normal WooCommerce
+// checkout request to the payment gateway.
+foreach ( $gateway_post_data as $key => $value ) {
+    $_POST[ $key ] = $value;
+    $_REQUEST[ $key ] = $value;
+}
+
+// Set the selected gateway in the WooCommerce session.
+WC()->session->set(
+    'chosen_payment_method',
+    $payment_method
+);
+
+WC()->session->save_data();
+
+// Make sure the order has the correct payment method.
+$order->set_payment_method( $gateway );
+$order->set_payment_method_title(
+    $gateway->get_title()
+);
+$order->save();
+
+// ==========================================
+// PROCESS PAYMENT
+// ==========================================
+
+$payment_result = $gateway->process_payment(
+    $order_id
+);
+
+// ==========================================
+// NORMALIZE THE GATEWAY RESPONSE
+// ==========================================
+
+if ( is_object( $payment_result ) ) {
+    $payment_result = (array) $payment_result;
+}
+
+if ( ! is_array( $payment_result ) ) {
+
+    return new WP_Error(
+        'gateway_invalid_response',
+        'The selected payment gateway returned an invalid response.',
+        array(
+            'status'  => 500,
+            'gateway' => $payment_method,
+        )
+    );
+}
+
+// Some gateways may return "success" with a redirect.
+$result_status = isset(
+    $payment_result['result']
+)
+    ? strtolower(
+        (string) $payment_result['result']
+    )
+    : '';
+
+// ==========================================
+// SUCCESS
+// ==========================================
+
+if ( $result_status === 'success' ) {
+
+    $redirect = '';
+
+    if (
+        isset(
+            $payment_result['redirect']
+        ) &&
+        is_string(
+            $payment_result['redirect']
+        )
+    ) {
+        $redirect = esc_url_raw(
+            $payment_result['redirect']
+        );
+    }
+
+    WC()->session->set(
+        'order_awaiting_payment',
+        $order_id
+    );
+
+    WC()->session->save_data();
+
+    // IMPORTANT:
+    // We do NOT allow the old WordPress checkout
+    // page to become the redirect.
+    //
+    // If the gateway returns an external payment
+    // provider URL, that URL is allowed.
+    if ( $redirect ) {
+
+        $redirect_host = wp_parse_url(
+            $redirect,
+            PHP_URL_HOST
         );
 
-        if ( ! is_array( $payment_result ) ) {
-            throw new Exception(
-                'The payment gateway returned an invalid response.'
-            );
-        }
+        $redirect_path = wp_parse_url(
+            $redirect,
+            PHP_URL_PATH
+        );
+
+        $site_host = wp_parse_url(
+            home_url(),
+            PHP_URL_HOST
+        );
 
         if (
-            isset( $payment_result['result'] ) &&
-            $payment_result['result'] === 'success'
-        ) {
-
-            $redirect = isset(
-                $payment_result['redirect']
+            $redirect_host === $site_host &&
+            (
+                strpos(
+                    $redirect_path,
+                    '/checkout'
+                ) === 0 ||
+                strpos(
+                    $redirect_path,
+                    '/cart'
+                ) === 0
             )
-                ? esc_url_raw(
-                    $payment_result['redirect']
-                )
-                : '';
+        ) {
+            $redirect = '';
+        }
+    }
 
-            // Never allow the old WooCommerce checkout
-            // page to become the redirect target.
-            if ( $redirect ) {
+    WC()->cart->empty_cart();
 
-                $redirect_host =
-                    wp_parse_url(
-                        $redirect,
-                        PHP_URL_HOST
-                    );
+    return rest_ensure_response(
+        array(
+            'success'  => true,
+            'result'   => 'success',
+            'order_id' => $order_id,
+            'redirect' => $redirect,
+        )
+    );
+}
 
-                $redirect_path =
-                    wp_parse_url(
-                        $redirect,
-                        PHP_URL_PATH
-                    );
+// ==========================================
+// GATEWAY DID NOT RETURN SUCCESS
+// ==========================================
 
-                $site_host =
-                    wp_parse_url(
-                        home_url(),
-                        PHP_URL_HOST
-                    );
+$message =
+    'The selected payment gateway could not start the payment.';
 
-                if (
-                    $redirect_host === $site_host &&
-                    (
-                        strpos(
-                            $redirect_path,
-                            '/checkout'
-                        ) === 0 ||
-                        strpos(
-                            $redirect_path,
-                            '/cart'
-                        ) === 0
-                    )
-                ) {
-                    $redirect = '';
-                }
-            }
+if (
+    isset(
+        $payment_result['messages']
+    )
+) {
+
+    $messages =
+        $payment_result['messages'];
+
+    if ( is_array( $messages ) ) {
+        $messages = implode(
+            ' ',
+            $messages
+        );
+    }
+
+    $messages =
+        wp_strip_all_tags(
+            (string) $messages
+        );
+
+    if ( $messages ) {
+        $message = $messages;
+    }
+}
+
+if (
+    isset(
+        $payment_result['message']
+    ) &&
+    $payment_result['message']
+) {
+
+    $message =
+        wp_strip_all_tags(
+            (string)
+            $payment_result['message']
+        );
+}
+
+return new WP_Error(
+    'gateway_payment_failed',
+    $message,
+    array(
+        'status'   => 402,
+        'order_id' => $order_id,
+        'gateway'  => $payment_method,
+    )
+);
+
+
 
             WC()->cart->empty_cart();
 
