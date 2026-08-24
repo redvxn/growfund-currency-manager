@@ -2493,118 +2493,6 @@ return new WP_Error(
     }
 }
 
-// ============================================================
-// HEADLESS NEXT.JS CHECKOUT API
-// ============================================================
-//
-// This is intentionally separate from mobile-handoff.
-//
-// mobile-handoff:
-// Next.js/mobile -> WordPress checkout page
-//
-// process-checkout:
-// Next.js -> WooCommerce order -> payment gateway
-//
-// The second flow does NOT send the donor to the
-// WordPress checkout page.
-// ============================================================
-
-
-add_action( 'rest_api_init', 'gfcm_register_headless_checkout_routes' );
-
-function gfcm_register_headless_checkout_routes() {
-
-    register_rest_route(
-        'gfcm/v1',
-        '/checkout-gateways',
-        array(
-            'methods'             => 'GET',
-            'callback'            => 'gfcm_get_headless_checkout_gateways',
-            'permission_callback' => '__return_true',
-        )
-    );
-
-    register_rest_route(
-        'gfcm/v1',
-        '/process-checkout',
-        array(
-            'methods'             => 'POST',
-            'callback'            => 'gfcm_process_headless_checkout',
-            'permission_callback' => '__return_true',
-        )
-    );
-}
-
-
-// ============================================================
-// 1. RETURN AVAILABLE PAYMENT GATEWAYS
-// ============================================================
-
-function gfcm_get_headless_checkout_gateways( $request ) {
-
-    if ( ! class_exists( 'WooCommerce' ) ) {
-        return new WP_Error(
-            'woocommerce_missing',
-            'WooCommerce is not available.',
-            array( 'status' => 500 )
-        );
-    }
-
-    if ( ! function_exists( 'WC' ) ) {
-        return new WP_Error(
-            'woocommerce_missing',
-            'WooCommerce is not available.',
-            array( 'status' => 500 )
-        );
-    }
-
-    $available_gateways = WC()->payment_gateways()->get_available_payment_gateways();
-
-    $gateways = array();
-
-    /*
-     * These are the payment gateways already identified
-     * in the existing HiilBox code.
-     *
-     * We only expose these gateways to the Next.js frontend.
-     */
-    $allowed_gateways = array(
-        'zes_pay',
-        'edahab_pay',
-        'premier_wallet_pay',
-        'card_pay',
-    );
-
-    foreach ( $available_gateways as $gateway_id => $gateway ) {
-
-        if ( ! in_array( $gateway_id, $allowed_gateways, true ) ) {
-            continue;
-        }
-
-        if ( isset( $gateway->enabled ) && $gateway->enabled !== 'yes' ) {
-            continue;
-        }
-
-        $gateways[] = array(
-            'id'          => $gateway->id,
-            'title'       => wp_strip_all_tags( $gateway->get_title() ),
-            'description' => wp_strip_all_tags(
-                $gateway->get_description()
-            ),
-            'icon'        => isset( $gateway->icon )
-                ? esc_url_raw( $gateway->icon )
-                : '',
-        );
-    }
-
-    return rest_ensure_response(
-        array(
-            'success'  => true,
-            'gateways' => $gateways,
-        )
-    );
-}
-
 
 
 // ==========================================
@@ -3155,35 +3043,97 @@ function gfcm_api_process_checkout( $request ) {
             $posted_data,
             $order
         );
+// ------------------------------------------
+// PROCESS PAYMENT DIRECTLY
+// ------------------------------------------
 
-        // ------------------------------------------
-        // PROCESS PAYMENT DIRECTLY
-        //
-        // This is the critical part.
-        //
-        // The gateway gets the WooCommerce order ID
-        // directly. We DO NOT redirect to /checkout/.
-        // ------------------------------------------
+WC()->session->set(
+    'order_awaiting_payment',
+    $order_id
+);
 
-        WC()->session->set(
-            'order_awaiting_payment',
-            $order_id
-        );
+WC()->session->set(
+    'chosen_payment_method',
+    $payment_method
+);
 
-        WC()->session->save_data();
+WC()->session->save_data();
 
-        $result = $gateway->process_payment(
-            $order_id
-        );
+// Make the gateway see the same checkout fields
+// that it would receive from the normal WooCommerce checkout.
+$_POST['billing_first_name'] = $first_name;
+$_POST['billing_last_name']  = $last_name;
+$_POST['billing_email']      = $email;
 
-        if ( ! is_array( $result ) ) {
+$_POST['billing_country']    = $country;
+$_POST['billing_address_1']  = $address;
+$_POST['billing_address_2']  = $address_2;
+$_POST['billing_city']       = $city;
+$_POST['billing_state']      = $state;
+$_POST['billing_postcode']   = $zip_code;
+$_POST['billing_phone']      = '';
 
-            return new WP_Error(
-                'invalid_gateway_response',
-                'The payment gateway returned an invalid response.',
-                array( 'status' => 500 )
-            );
-        }
+$_POST['payment_method']     = $payment_method;
+
+$_POST['terms']              = '1';
+$_POST['terms-field']        = '1';
+$_POST['createaccount']      = '0';
+$_POST['order_comments']     = '';
+
+foreach ( $_POST as $key => $value ) {
+    $_REQUEST[ $key ] = $value;
+}
+
+// Make sure the order itself has the selected gateway.
+$order->set_payment_method(
+    $gateway
+);
+
+$order->set_payment_method_title(
+    $gateway->get_title()
+);
+
+$order->save();
+
+error_log(
+    'GFCM HEADLESS BEFORE PAYMENT: gateway=' .
+    $payment_method .
+    ' order=' .
+    $order_id
+);
+
+@set_time_limit(30);
+
+$result = $gateway->process_payment(
+    $order_id
+);
+
+error_log(
+    'GFCM HEADLESS AFTER PAYMENT: gateway=' .
+    $payment_method .
+    ' order=' .
+    $order_id .
+    ' result=' .
+    print_r( $result, true )
+);
+
+// Some gateways may return an object.
+if ( is_object( $result ) ) {
+    $result = (array) $result;
+}
+
+if ( ! is_array( $result ) ) {
+
+    return new WP_Error(
+        'invalid_gateway_response',
+        'The payment gateway returned an invalid response.',
+        array(
+            'status'  => 500,
+            'gateway' => $payment_method,
+            'type'    => gettype( $result ),
+        )
+    );
+}
 
         if (
             isset( $result['result'] ) &&
