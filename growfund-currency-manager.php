@@ -47,6 +47,7 @@ require_once GFCM_PLUGIN_DIR . 'includes/api/controllers/class-auth-controller.p
 require_once GFCM_PLUGIN_DIR . 'includes/api/controllers/class-campaign-controller.php';
 require_once GFCM_PLUGIN_DIR . 'includes/api/controllers/class-donation-controller.php';
 require_once GFCM_PLUGIN_DIR . 'includes/api/controllers/class-donor-controller.php';
+require_once GFCM_PLUGIN_DIR . 'includes/api/controllers/class-fundraiser-controller.php';
 require_once GFCM_PLUGIN_DIR . 'includes/api/controllers/class-checkout-controller.php';
 require_once GFCM_PLUGIN_DIR . 'includes/api/controllers/class-media-controller.php';
 

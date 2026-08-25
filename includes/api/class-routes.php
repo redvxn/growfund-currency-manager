@@ -471,6 +471,18 @@ class GFCM_API_Routes {
             ]
         );
 
+        // ==== Sifalo Wallet Payment (Protected) ====
+
+        register_rest_route(
+            $this->namespace,
+            '/process-sifalo-wallet',
+            [
+                'methods'             => 'GET',
+                'callback'            => [ new GFCM_Checkout_Controller(), 'process_sifalo_wallet_payment' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+            ]
+        )
+
         // ===== Donor Routes (Protected) =====
 
         // 1. GET paginated donations made by the current user (Donor or Fundraiser)
@@ -501,6 +513,39 @@ class GFCM_API_Routes {
                         'type' => 'string',
                     ],
                     'end_date' => [
+                        'type' => 'string',
+                    ],
+                    'orderby' => [
+                        'type' => 'string',
+                    ],
+                    'order' => [
+                        'type' => 'string',
+                    ],
+                ],
+            ]
+        );
+
+        // ===== Fundraiser Routes (Protected) =====
+
+        // 1. GET paginated fundraisers
+        register_rest_route(
+            $this->namespace,
+            '/fundraisers/paginated',
+            [
+                'methods'             => 'GET',
+                'callback'            => [ new GFCM_Fundraiser_Controller(), 'get_paginated_fundraisers' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'page' => [
+                        'type' => 'integer',
+                    ],
+                    'per_page' => [
+                        'type' => 'integer',
+                    ],
+                    'status' => [
+                        'type' => 'string',
+                    ],
+                    'search' => [
                         'type' => 'string',
                     ],
                     'orderby' => [

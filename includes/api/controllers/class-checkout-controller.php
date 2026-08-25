@@ -3,11 +3,49 @@
  * Checkout Controller - Handles checkout handoff endpoints
  */
 
+use sifalo-pay/sifalo-pay;
+
 if ( ! defined( 'ABSPATH' ) ) exit;
 
 class GFCM_Checkout_Controller {
 
     const HANDOFF_TOKEN_EXPIRY = 15 * MINUTE_IN_SECONDS; // 15 minutes
+
+    protected $sifalo_service;
+
+    public function __construct()
+    {
+        $this->sifalo_service = new WC_Gateway_Sifalo_Pay();
+    }
+
+    /**
+     * Process Sifalo Pay Mobile Payment
+     * 
+     * @param WP_REST_Request $request The request object
+     * @return WP_REST_Response|WP_Error
+     */
+
+    public function process_sifalo_wallet_payment( $request ) {
+
+        $order_id = $request->get_param( 'order_id' );
+
+        if( ! $order_id ) {
+            return new WP_Error(
+                'Invalid Order_id',
+                'Order_id is required',
+                [ 'status' => 400 ]
+            );
+        }
+
+        $result = $this->sifalo_service->process_payment($order_id);
+
+        return rest_ensure_response( [
+            'success' => true,
+            'data'    => $result,
+        ] );
+
+
+    }
 
     /**
      * Generate checkout handoff URL
