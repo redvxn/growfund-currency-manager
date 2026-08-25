@@ -2347,14 +2347,14 @@ function gfcm_api_process_checkout(
         : '';
 
     $phone =
-    isset(
-        $params['phone']
-    )
-    ? sanitize_text_field(
-        $params['phone']
-    )
-    : '';
-    
+        isset(
+            $params['phone']
+        )
+        ? sanitize_text_field(
+            $params['phone']
+        )
+        : '';
+
     $address =
         isset(
             $params['address']
@@ -2506,15 +2506,16 @@ function gfcm_api_process_checkout(
     }
 
     if ( ! $phone ) {
-    return new WP_Error(
-        'missing_phone',
-        'Phone number is required.',
-        array(
-            'status' => 400,
-        )
-    );
-}
-    
+
+        return new WP_Error(
+            'missing_phone',
+            'Phone number is required.',
+            array(
+                'status' => 400,
+            )
+        );
+    }
+
     if ( ! $address ) {
 
         return new WP_Error(
@@ -2576,6 +2577,7 @@ function gfcm_api_process_checkout(
                 ! WC()->cart
             )
         ) {
+
             wc_load_cart();
         }
 
@@ -2650,11 +2652,12 @@ function gfcm_api_process_checkout(
                 ->set_billing_email(
                     $email
                 );
-               WC()->customer
-             ->set_billing_phone(
-                     $phone
-              );
-            
+
+            WC()->customer
+                ->set_billing_phone(
+                    $phone
+                );
+
             WC()->customer
                 ->set_billing_address_1(
                     $address
@@ -2719,6 +2722,8 @@ function gfcm_api_process_checkout(
             );
         }
 
+        $tip_product_id = 0;
+
         if (
             function_exists(
                 'gfcm_get_tip_product_id'
@@ -2731,7 +2736,8 @@ function gfcm_api_process_checkout(
                 );
 
             if (
-                $tip_product_id
+                $tip_product_id &&
+                $tip_amount > 0
             ) {
 
                 WC()->cart->add_to_cart(
@@ -2802,7 +2808,7 @@ function gfcm_api_process_checkout(
                 $zip_code,
 
             'billing_phone' =>
-                  $phone,
+                $phone,
 
             'shipping_first_name' =>
                 $first_name,
@@ -2907,12 +2913,190 @@ function gfcm_api_process_checkout(
                 $order_id
             );
 
-        if (
-            ! $order
-        ) {
+        if ( ! $order ) {
 
             throw new Exception(
                 'Unable to load the created WooCommerce order.'
+            );
+        }
+
+        // ------------------------------------------
+        // FIX ORDER LINE AMOUNTS
+        // ------------------------------------------
+        //
+        // Product 661 is the donation placeholder.
+        // We now make its actual WooCommerce order
+        // line equal to the donation amount supplied
+        // by Next.js.
+        //
+        // This is the critical fix.
+        //
+        // Sifalo reads $order->get_total(), so the
+        // WooCommerce order itself must contain the
+        // correct monetary value.
+        // ------------------------------------------
+
+        $donation_line_found = false;
+        $tip_line_found      = false;
+
+        foreach (
+            $order->get_items( 'line_item' )
+            as $item_id => $item
+        ) {
+
+            $product_id =
+                $item->get_product_id();
+
+            // --------------------------------------
+            // DONATION PRODUCT
+            // --------------------------------------
+
+            if (
+                $product_id === 661
+            ) {
+
+                $item->set_subtotal(
+                    wc_format_decimal(
+                        $amount,
+                        wc_get_price_decimals()
+                    )
+                );
+
+                $item->set_total(
+                    wc_format_decimal(
+                        $amount,
+                        wc_get_price_decimals()
+                    )
+                );
+
+                $item->set_subtotal_tax( 0 );
+                $item->set_total_tax( 0 );
+                $item->set_taxes(
+                    array(
+                        'total' =>
+                            array(),
+
+                        'subtotal' =>
+                            array(),
+                    )
+                );
+
+                $item->save();
+
+                $donation_line_found = true;
+            }
+
+            // --------------------------------------
+            // PLATFORM TIP
+            // --------------------------------------
+
+            if (
+                $tip_product_id &&
+                $product_id === $tip_product_id
+            ) {
+
+                $item->set_subtotal(
+                    wc_format_decimal(
+                        $tip_amount,
+                        wc_get_price_decimals()
+                    )
+                );
+
+                $item->set_total(
+                    wc_format_decimal(
+                        $tip_amount,
+                        wc_get_price_decimals()
+                    )
+                );
+
+                $item->set_subtotal_tax( 0 );
+                $item->set_total_tax( 0 );
+                $item->set_taxes(
+                    array(
+                        'total' =>
+                            array(),
+
+                        'subtotal' =>
+                            array(),
+                    )
+                );
+
+                $item->save();
+
+                $tip_line_found = true;
+            }
+        }
+
+        if ( ! $donation_line_found ) {
+
+            throw new Exception(
+                'The donation order item could not be found.'
+            );
+        }
+
+        if (
+            $tip_amount > 0 &&
+            $tip_product_id &&
+            ! $tip_line_found
+        ) {
+
+            throw new Exception(
+                'The platform tip order item could not be found.'
+            );
+        }
+
+        // ------------------------------------------
+        // RECALCULATE ORDER TOTAL
+        // ------------------------------------------
+        //
+        // This makes WooCommerce's actual order
+        // total equal to:
+        //
+        // donation amount + platform tip
+        //
+        // instead of the placeholder product price.
+        // ------------------------------------------
+
+        $order->calculate_totals( false );
+
+        // ------------------------------------------
+        // VERIFY THE ACTUAL ORDER TOTAL
+        // ------------------------------------------
+
+        $expected_total =
+            $amount + $tip_amount;
+
+        $actual_total =
+            (float)
+            $order->get_total();
+
+        error_log(
+            'GFCM ORDER AMOUNT CHECK: order=' .
+            $order_id .
+            ' donation=' .
+            $amount .
+            ' tip=' .
+            $tip_amount .
+            ' expected_total=' .
+            $expected_total .
+            ' actual_total=' .
+            $actual_total
+        );
+
+        /*
+         * Do not allow payment to proceed if the
+         * WooCommerce order does not contain the
+         * amount we intended to charge.
+         */
+        if (
+            abs(
+                $actual_total -
+                $expected_total
+            ) > 0.0001
+        ) {
+
+            throw new Exception(
+                'WooCommerce order total does not match the donation amount.'
             );
         }
 
@@ -2944,10 +3128,12 @@ function gfcm_api_process_checkout(
             '_gfcm_payment_method',
             $payment_method
         );
-      $order->update_meta_data(
-      '_gfcm_phone',
-      $phone
-      );
+
+        $order->update_meta_data(
+            '_gfcm_phone',
+            $phone
+        );
+
         $order->update_meta_data(
             'growfund_is_anonymous',
             $is_anonymous ? 1 : 0
@@ -2980,66 +3166,74 @@ function gfcm_api_process_checkout(
             $posted_data,
             $order
         );
-// ------------------------------------------
-// DIRECT PAYMENT
-// ------------------------------------------
 
-WC()->session->set(
-    'order_awaiting_payment',
-    $order_id
-);
+        // ------------------------------------------
+        // DIRECT PAYMENT
+        // ------------------------------------------
 
-WC()->session->set(
-    'chosen_payment_method',
-    $payment_method
-);
+        WC()->session->set(
+            'order_awaiting_payment',
+            $order_id
+        );
 
-WC()->session->save_data();
+        WC()->session->set(
+            'chosen_payment_method',
+            $payment_method
+        );
 
-error_log(
-    'GFCM HEADLESS BEFORE PAYMENT: gateway=' .
-    $payment_method .
-    ' order=' .
-    $order_id
-);
+        WC()->session->save_data();
 
-@set_time_limit(30);
+        error_log(
+            'GFCM HEADLESS BEFORE PAYMENT: gateway=' .
+            $payment_method .
+            ' order=' .
+            $order_id .
+            ' order_total=' .
+            $order->get_total()
+        );
 
-// ------------------------------------------
-// SIFALO PAYMENT ACCOUNT
-// ------------------------------------------
-//
-// The existing Next.js `phone` field is also
-// the customer's ZAAD payment number.
-//
-// Sifalo's WooCommerce gateway expects this
-// value as $_POST['zaad_number'].
-//
+        @set_time_limit(30);
 
-if ($payment_method === 'zes_pay') {
+        // ------------------------------------------
+        // SIFALO PAYMENT ACCOUNT
+        // ------------------------------------------
+        //
+        // The existing Next.js `phone` field is also
+        // the customer's ZAAD payment number.
+        //
+        // Sifalo's WooCommerce gateway expects this
+        // value as $_POST['zaad_number'].
+        // ------------------------------------------
 
-    $_POST['zaad_number'] = sanitize_text_field(
-        $phone
-    );
+        if (
+            $payment_method === 'zes_pay'
+        ) {
 
-    $_REQUEST['zaad_number'] = sanitize_text_field(
-        $phone
-    );
+            $_POST['zaad_number'] =
+                sanitize_text_field(
+                    $phone
+                );
 
-    error_log(
-        'GFCM SIFALO: ZAAD account populated from phone for order ' .
-        $order_id
-    );
-}
+            $_REQUEST['zaad_number'] =
+                sanitize_text_field(
+                    $phone
+                );
 
-// ------------------------------------------
-// PROCESS PAYMENT
-// ------------------------------------------
+            error_log(
+                'GFCM SIFALO: ZAAD account populated from phone for order ' .
+                $order_id
+            );
+        }
 
-$payment_result =
-    $gateway->process_payment(
-        $order_id
-    );
+        // ------------------------------------------
+        // PROCESS PAYMENT
+        // ------------------------------------------
+
+        $payment_result =
+            $gateway->process_payment(
+                $order_id
+            );
+
         error_log(
             'GFCM HEADLESS AFTER PAYMENT: gateway=' .
             $payment_method .
