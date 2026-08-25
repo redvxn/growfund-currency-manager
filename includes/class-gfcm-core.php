@@ -2346,6 +2346,15 @@ function gfcm_api_process_checkout(
         )
         : '';
 
+    $phone =
+    isset(
+        $params['phone']
+    )
+    ? sanitize_text_field(
+        $params['phone']
+    )
+    : '';
+    
     $address =
         isset(
             $params['address']
@@ -2496,6 +2505,16 @@ function gfcm_api_process_checkout(
         );
     }
 
+    if ( ! $phone ) {
+    return new WP_Error(
+        'missing_phone',
+        'Phone number is required.',
+        array(
+            'status' => 400,
+        )
+    );
+}
+    
     if ( ! $address ) {
 
         return new WP_Error(
@@ -2631,7 +2650,11 @@ function gfcm_api_process_checkout(
                 ->set_billing_email(
                     $email
                 );
-
+               WC()->customer
+             ->set_billing_phone(
+                     $phone
+              );
+            
             WC()->customer
                 ->set_billing_address_1(
                     $address
@@ -2779,7 +2802,7 @@ function gfcm_api_process_checkout(
                 $zip_code,
 
             'billing_phone' =>
-                '',
+                  $phone,
 
             'shipping_first_name' =>
                 $first_name,
@@ -2921,7 +2944,10 @@ function gfcm_api_process_checkout(
             '_gfcm_payment_method',
             $payment_method
         );
-
+      $order->update_meta_data(
+      '_gfcm_phone',
+      $phone
+      );
         $order->update_meta_data(
             'growfund_is_anonymous',
             $is_anonymous ? 1 : 0
