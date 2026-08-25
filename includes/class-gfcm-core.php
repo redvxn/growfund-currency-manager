@@ -2980,37 +2980,66 @@ function gfcm_api_process_checkout(
             $posted_data,
             $order
         );
+// ------------------------------------------
+// DIRECT PAYMENT
+// ------------------------------------------
 
-        // ------------------------------------------
-        // DIRECT PAYMENT
-        // ------------------------------------------
+WC()->session->set(
+    'order_awaiting_payment',
+    $order_id
+);
 
-        WC()->session->set(
-            'order_awaiting_payment',
-            $order_id
-        );
+WC()->session->set(
+    'chosen_payment_method',
+    $payment_method
+);
 
-        WC()->session->set(
-            'chosen_payment_method',
-            $payment_method
-        );
+WC()->session->save_data();
 
-        WC()->session->save_data();
+error_log(
+    'GFCM HEADLESS BEFORE PAYMENT: gateway=' .
+    $payment_method .
+    ' order=' .
+    $order_id
+);
 
-        error_log(
-            'GFCM HEADLESS BEFORE PAYMENT: gateway=' .
-            $payment_method .
-            ' order=' .
-            $order_id
-        );
+@set_time_limit(30);
 
-        @set_time_limit(30);
+// ------------------------------------------
+// SIFALO PAYMENT ACCOUNT
+// ------------------------------------------
+//
+// The existing Next.js `phone` field is also
+// the customer's ZAAD payment number.
+//
+// Sifalo's WooCommerce gateway expects this
+// value as $_POST['zaad_number'].
+//
 
-        $payment_result =
-            $gateway->process_payment(
-                $order_id
-            );
+if ($payment_method === 'zes_pay') {
 
+    $_POST['zaad_number'] = sanitize_text_field(
+        $phone
+    );
+
+    $_REQUEST['zaad_number'] = sanitize_text_field(
+        $phone
+    );
+
+    error_log(
+        'GFCM SIFALO: ZAAD account populated from phone for order ' .
+        $order_id
+    );
+}
+
+// ------------------------------------------
+// PROCESS PAYMENT
+// ------------------------------------------
+
+$payment_result =
+    $gateway->process_payment(
+        $order_id
+    );
         error_log(
             'GFCM HEADLESS AFTER PAYMENT: gateway=' .
             $payment_method .
