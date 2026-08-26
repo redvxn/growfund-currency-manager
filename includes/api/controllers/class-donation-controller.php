@@ -8,6 +8,10 @@ use Growfund\Services\DonationService;
 use Growfund\Policies\DonationPolicy;
 use Growfund\DTO\PaginatedCollectionDTO;
 use Growfund\DTO\Donation\DonationDTO;
+use Growfund\DTO\Donation\CreateDonationDTO;
+use Growfund\Supports\Payment;
+use Growfund\Sanitizer;
+use Growfund\Validation\Validator;
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
@@ -143,6 +147,42 @@ class GFCM_Donation_Controller {
             'data'    => $gprates,
         ] );
 
+    }
+
+    /**
+     * 
+     * Create a donation 
+     * @param WP_REST_Request $request The request object
+     * @return WP_REST_Response|WP_Error
+     */
+
+    public function create_donation( $request ) {
+        $data = $request=>all();
+
+        $validator = Validator::make($data, CreateDonationDTO::validation_rules());
+
+        if ($validator->is_failed()) {
+            return new WP_Error(
+                'Validation Error',
+                'Validation Error', 
+                [
+                    'status' => 403
+                ]
+            );
+        }
+
+        $sanitized_data = Sanitizer::make($data, CreateDonationDTO::sanitization_rules())->get_sanitized_data();
+        $dto = CreateDonationDTO::from_array($sanitized_data);
+
+        $id = $this->sevice->create($dto);
+
+        return rest_ensure_response([
+            'success' => true,
+            'id' => $id,
+            'message' => "Successfully created a donation",
+        ],
+
+        );
     }
 
     

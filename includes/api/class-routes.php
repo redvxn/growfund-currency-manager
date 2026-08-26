@@ -399,7 +399,7 @@ class GFCM_API_Routes {
             ]
         );
 
-        // ===== Donation Routes (Protected) =====
+
 
         // 1. GET paginated donations made by the current user (Donor or Fundraiser)
         register_rest_route(
@@ -447,6 +447,61 @@ class GFCM_API_Routes {
             ]
         );
 
+        // Create a donation 
+        register_rest_route(
+            $this->namespace,
+            '/donations/create',
+            [
+                'methods'             => 'POST',
+                'callback'            => [ new GFCM_Donation_Controller(), 'create_donation' ],
+                'permission_callback' => [ 'GFCM_Combined_Auth_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'uid' => [
+                        'type' => 'string',
+                    ],
+                    'campaign_id' => [
+                        'type' => 'integer',
+                    ],
+                    'fund_id' => [
+                        'type' => 'integer',
+                    ],
+                    'user_id' => [
+                        'type' => 'integer',
+                    ],
+                    'email' => [
+                        'type' => 'string',
+                    ],
+                    'amount' => [
+                        'type' => 'integer',
+                    ],
+                    'notes' => [
+                        'type' => 'string',
+                    ],
+                    'status' => [
+                        'type' => 'string',
+                    ],
+                    'transaction_id' => [
+                        'type' => 'integer',
+                    ],
+                    'payment_engine' => [
+                        'type' => 'string',
+                    ],
+                    'payment_method' => [
+                        'type' => 'string',
+                    ],
+                    'payment_status' => [
+                        'type' => 'string',
+                    ],
+                    'is_anonymous' => [
+                        'type' => 'boolean',
+                    ],
+                    'user_info' => [
+                        'type' => 'string',
+                    ],
+                ],
+            ]
+        )
+
         // ===== Currency Routes (Protected) =====
 
         // 1. GET all currencies
@@ -457,6 +512,7 @@ class GFCM_API_Routes {
                 'methods'             => 'GET',
                 'callback'            => [ new GFCM_Donation_Controller(), 'get_currencies' ],
                 'permission_callback' => [ 'GFCM_Combined_Auth_Middleware', 'validate' ], // Protected
+                
             ]
         );
 
@@ -558,7 +614,7 @@ class GFCM_API_Routes {
             ]
         );
 
-        // 2. GET a single donation by ID
+        /* // 2. GET a single donation by ID
         register_rest_route(
             $this->namespace,
             '/donations/(?P<id>\d+)',
@@ -572,9 +628,9 @@ class GFCM_API_Routes {
                     ],
                 ],
             ]
-        );
+        ); */
 
-        // 3. GET all donations received by the current Fundraiser (Across all their campaigns)
+        /* // 3. GET all donations received by the current Fundraiser (Across all their campaigns)
         register_rest_route(
             $this->namespace,
             '/campaigns/donations',
@@ -587,9 +643,9 @@ class GFCM_API_Routes {
                     'per_page' => [ 'type' => 'integer' ],
                 ],
             ]
-        );
+        ); */
 
-        // 4. GET donations received for a specific campaign (Must be owned by Fundraiser)
+        /* // 4. GET donations received for a specific campaign (Must be owned by Fundraiser)
         register_rest_route(
             $this->namespace,
             '/campaigns/(?P<campaign_id>\d+)/donations',
@@ -603,9 +659,9 @@ class GFCM_API_Routes {
                     'per_page' => [ 'type' => 'integer' ],
                 ],
             ]
-        );
+        ); */
 
-        // ===== Checkout Routes (Protected) =====
+        /* // ===== Checkout Routes (Protected) =====
 
         register_rest_route(
             $this->namespace,
@@ -621,7 +677,7 @@ class GFCM_API_Routes {
                     ],
                 ],
             ]
-        );
+        ); */
     }
 }
 
