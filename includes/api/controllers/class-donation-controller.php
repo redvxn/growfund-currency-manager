@@ -157,16 +157,46 @@ class GFCM_Donation_Controller {
      */
 
     public function create_donation( $request ) {
-        $data = $request=>all();
+    
+        // FIX 1: Build the associative array directly instead of mixing array/object syntax
+        $data = [
+            'uid'            => $request->get_param( 'uid' ) ?? '',
+            'campaign_id'    => $request->get_param( 'campaign_id' ) ?? '',
+            'fund_id'        => $request->get_param( 'fund_id' ) ?? '',
+            'user_id'        => $request->get_param( 'user_id' ) ?? '',
+            'email'          => $request->get_param( 'email' ) ?? '',
+            'amount'         => $request->get_param( 'amount' ) ?? '',
+            'notes'          => $request->get_param( 'notes' ) ?? '',
+            'status'         => $request->get_param( 'status' ) ?? '',
+            'transaction_id' => $request->get_param( 'transaction_id' ) ?? '',
+            'payment_engine' => $request->get_param( 'payment_engine' ) ?? '',
+            'payment_method' => $request->get_param( 'payment_method' ) ?? '',
+            'payment_status' => $request->get_param( 'payment_status' ) ?? '',
+            'is_anonymous'   => $request->get_param( 'is_anonymous' ) ?? '',
+            'user_info'      => $request->get_param( 'user_info' ) ?? '',
+        ];
 
         $validator = Validator::make($data, CreateDonationDTO::validation_rules());
 
-        if ($validator->is_failed()) {
+        if ( $validator->is_failed() ) {
+            $specific_errors = $validator->get_errors();
+            
+            // Convert the array of specific errors into a single readable string
+            // e.g., "title: Required field, goal_amount: Must be numeric"
+            $error_string = is_array( $specific_errors ) 
+                ? implode( ', ', array_map(
+                    function( $v, $k ) { return $k . ': ' . ( is_array( $v ) ? implode( ' ', $v ) : $v ); }, 
+                    $specific_errors, 
+                    array_keys( $specific_errors )
+                )) 
+                : 'Validation failed';
+
             return new WP_Error(
-                'Validation Error',
-                'Validation Error', 
+                'rest_invalid_param', // Standard WP REST API code for invalid parameters
+                'Validation errors - ' . $error_string, 
                 [
-                    'status' => 403
+                    'status' => 422,
+                    'details' => $specific_errors, // Next.js can read response.data.details to highlight specific inputs
                 ]
             );
         }
@@ -174,15 +204,43 @@ class GFCM_Donation_Controller {
         $sanitized_data = Sanitizer::make($data, CreateDonationDTO::sanitization_rules())->get_sanitized_data();
         $dto = CreateDonationDTO::from_array($sanitized_data);
 
-        $id = $this->sevice->create($dto);
+        // FIX 2: Corrected typo 'sevice' to 'service'
+        $id = $this->service->create($dto);
 
+        // ==========================================
+        // ADD THE EXTRA VALUES TO THE NEW DONATION
+        // ==========================================
+        if ( $id ) {
+            global $wpdb;
+            $table = $wpdb->prefix . 'growfund_donations';
+
+            // Retrieve the values from the request (defaulting to 0 if missing)
+            $processing_fee = $request->get_param( 'processing_fee' ) ?? 0;
+            $gateway_fee    = $request->get_param( 'gateway_fee' ) ?? 0;
+            $platform_fee   = $request->get_param( 'platform_fee' ) ?? 0;
+            $tip_amount     = $request->get_param( 'tip_amount' ) ?? 0;
+
+            // Use update() because the row already exists
+            $wpdb->update(
+                $table,
+                [
+                    'processing_fee' => $processing_fee,
+                    'gateway_fee'    => $gateway_fee,
+                    'platform_fee'   => $platform_fee,
+                    'tip_amount'     => $tip_amount,
+                ],
+                [ 'id' => $id ], // WHERE id = $id
+                [ '%f', '%f', '%f', '%f' ], // Data types: floats (use '%d' if integers or '%s' if strings)
+                [ '%d' ] // WHERE type: integer
+            );
+        }
+
+        // FIX 3: Cleaned up the trailing comma syntax error
         return rest_ensure_response([
             'success' => true,
-            'id' => $id,
+            'id'      => $id,
             'message' => "Successfully created a donation",
-        ],
-
-        );
+        ]);
     }
 
     

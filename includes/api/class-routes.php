@@ -351,6 +351,93 @@ class GFCM_API_Routes {
             ]
         );
 
+        //  Delete a campaign by id
+        register_rest_route(
+            $this->namespace,
+            '/campaign/(?P<id>\d+)/delete',
+            [
+                'methods'             => 'POST',
+                'callback'            => [ new GFCM_Campaign_Controller(), 'delete_campaign' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'id' => [
+                        'type' => 'integer',
+                    ],
+                ],
+            ]
+        );
+
+        //  Campaign Bulk Action
+        register_rest_route(
+            $this->namespace,
+            '/campaigns/bulk-action',
+            [
+                'methods'             => 'POST',
+                'callback'            => [ new GFCM_Campaign_Controller(), 'campaign_bulk_actions' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'ids' => [
+                        'type' => 'array',
+                    ],
+                    'action' => [
+                        'type' => 'string',
+                    ],
+                ],
+            ]
+        );
+
+        //  Campaigns Empty Trash
+        register_rest_route(
+            $this->namespace,
+            '/campaigns/empty-trash',
+            [
+                'methods'             => 'POST',
+                'callback'            => [ new GFCM_Campaign_Controller(), 'campaign_empty_trash' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+            ]
+        );
+
+        //  Update campaign status by id
+        register_rest_route(
+            $this->namespace,
+            '/campaign/(?P<id>\d+)/update-status',
+            [
+                'methods'             => 'POST',
+                'callback'            => [ new GFCM_Campaign_Controller(), 'campaign_update_status' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'id' => [
+                        'type' => 'integer',
+                    ],
+                    'status' => [
+                        'type' => 'string',
+                    ],
+                    'decline_reason' => [
+                        'type' => 'string',
+                    ],
+                ],
+            ]
+        );
+
+        //  Update campaign secondary status by id
+        register_rest_route(
+            $this->namespace,
+            '/campaign/(?P<id>\d+)/update-secondary-status',
+            [
+                'methods'             => 'POST',
+                'callback'            => [ new GFCM_Campaign_Controller(), 'campaign_update_secondary_status' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'id' => [
+                        'type' => 'integer',
+                    ],
+                    'status' => [
+                        'type' => 'string',
+                    ],
+                ],
+            ]
+        );
+
         // ===== Donation Routes (Protected) =====
 
         // 1. GET all donations 
@@ -454,7 +541,7 @@ class GFCM_API_Routes {
             [
                 'methods'             => 'POST',
                 'callback'            => [ new GFCM_Donation_Controller(), 'create_donation' ],
-                'permission_callback' => [ 'GFCM_Combined_Auth_Middleware', 'validate' ], // Protected
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
                 'args'                => [
                     'uid' => [
                         'type' => 'string',
@@ -498,9 +585,21 @@ class GFCM_API_Routes {
                     'user_info' => [
                         'type' => 'string',
                     ],
+                    'processing_fee' => [
+                        'type' => 'string',
+                    ],
+                    'gateway_fee' => [
+                        'type' => 'string',
+                    ],
+                    'platform_fee' => [
+                        'type' => 'string',
+                    ],
+                    'tip_amount' => [
+                        'type' => 'string',
+                    ],
                 ],
             ]
-        )
+        );
 
         // ===== Currency Routes (Protected) =====
 

@@ -13,6 +13,8 @@ use Growfund\Sanitizer;
 use Growfund\Views\Components\Campaign\CampaignList;
 use Growfund\DTO\Campaign\UpdateCampaignDTO;
 use Growfund\Constants\Status\CampaignStatus;
+use Growfund\Constants\Status\CampaignSecondaryStatus;
+use Growfund\Supports\Arr;
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
@@ -231,6 +233,331 @@ class GFCM_Campaign_Controller {
         ] );
     }
 
+    /**
+     * Delete a campaign
+     *
+     * @param WP_REST_Request $request The request object
+     * @return WP_REST_Response|WP_Error
+     */
+    public function delete_campaign( $request )
+    {
+        $id = intval( $request->get_param( 'id' ) ); 
+
+        try {
+            // Attempt to update the campaign
+            $is_deleted = $this->campaign_service->delete( $id );
+
+            // If it returns false instead of throwing
+            if ( ! $is_deleted ) {
+                return new WP_Error( 
+                    'delete_campaign_failed', 
+                    'Failed to delete the campaign.', 
+                    [ 'status' => 500 ] 
+                );
+            }
+
+        } catch ( \Exception $e ) {
+            // Capture the Exception and return a 400 Bad Request for ALL exceptions
+            return new WP_Error(
+                'campaign_delete_error', 
+                $e->getMessage(), // This will output "Failed to update campaign with ID..."
+                [ 'status' => 400 ] // <-- Assigning your single code right here
+            );
+        }
+
+        return rest_ensure_response( [
+            'success' => true,
+            'data'    => $is_deleted,
+            'message' => 'Campaign is deleted successfully',
+        ] );
+    }
+
+    /**
+     * Handle campaign bulk actions
+     *
+     * @param WP_REST_Request $request The request object
+     * @return WP_REST_Response|WP_Error
+     */
+    public function campaign_bulk_actions( $request ) 
+    {
+        $data = [
+            'ids'    => $request->get_param('ids'), // Make sure this matches your 'ids' validation key
+            'action' => $request->get_param('action'),
+        ];
+
+        $validator = Validator::make($data, [
+            'ids'    => 'required|array',
+            'action' => 'required|string|in:trash,restore,delete,featured,non-featured',
+        ]);
+
+        if ( $validator->is_failed() ) {
+            $specific_errors = $validator->get_errors();
+            
+            // Convert the array of specific errors into a single readable string
+            // e.g., "title: Required field, goal_amount: Must be numeric"
+            $error_string = is_array( $specific_errors ) 
+                ? implode( ', ', array_map(
+                    function( $v, $k ) { return $k . ': ' . ( is_array( $v ) ? implode( ' ', $v ) : $v ); }, 
+                    $specific_errors, 
+                    array_keys( $specific_errors )
+                )) 
+                : 'Validation failed';
+
+            return new WP_Error(
+                'rest_invalid_param', // Standard WP REST API code for invalid parameters
+                'Validation errors - ' . $error_string, 
+                [
+                    'status' => 422,
+                    'details' => $specific_errors, // Next.js can read response.data.details to highlight specific inputs
+                ]
+            );
+        }
+
+        $result = [];
+
+        switch ($request->get_param('action')) {
+            case 'trash':
+                $result = $this->campaign_service->bulk_delete($request->get_param('ids'));
+                break;
+            case 'delete':
+                $force_delete = true;
+                $result = $this->campaign_service->bulk_delete($request->get_param('ids'), $force_delete);
+                break;
+            case 'restore':
+                $result = $this->campaign_service->bulk_restore($request->get_param('ids'));
+                break;
+            case 'featured':
+                $result = $this->campaign_service->bulk_featured($request->get_param('ids'));
+                break;
+            case 'non-featured':
+                $result = $this->campaign_service->bulk_non_featured($request->get_param('ids'));
+                break;
+        }
+
+        $failed = empty($result['failed']) ? [] : Arr::make($result['failed'])->pluck('id')->toArray();
+
+        if ( ! empty( $failed ) ) {
+            // Generate the specific partial-success or failure message
+            $error_message = sprintf(
+                /* translators: %s: Campaign ids */
+                __('Bulk action successfully applied for all the selected campaigns except the campaigns with id: %s.', 'growfund'),
+                implode(', ', $failed)
+            );
+
+            return new WP_Error(
+                'rest_bulk_action_failed', 
+                $error_message, 
+                [
+                    'status'  => 422, 
+                    'details' => [
+                        'failed_campaign_ids' => $failed // Allows the frontend to easily parse which IDs failed
+                    ],
+                ]
+            );
+        }
+
+        return rest_ensure_response( [
+            'success' => true,
+            'data'    => $result,
+            'message' => 'Bulk action successfully applied for all the selected campaigns.',
+        ] );
+    }
+
+    /**
+     * Campaign Empty Trash
+     *
+     * @param WP_REST_Request $request The request object
+     * @return WP_REST_Response|WP_Error
+     */
+    public function campaign_empty_trash( $request ) 
+    {
+         $id = intval( $request->get_param( 'id' ) );
+
+         try {
+            // Attempt to update the campaign
+            $is_deleted = $this->campaign_service->empty_trash($id);
+
+            // If it returns false instead of throwing
+            if ( ! $is_deleted ) {
+                return new WP_Error( 
+                    'empty_campaign_trash_failed', 
+                    'Failed to empty the campaign trash.', 
+                    [ 'status' => 500 ] 
+                );
+            }
+
+        } catch ( \Exception $e ) {
+            // Capture the Exception and return a 400 Bad Request for ALL exceptions
+            return new WP_Error(
+                'empty_campaign_trash_error', 
+                $e->getMessage(), // This will output "Failed to update campaign with ID..."
+                [ 'status' => 400 ] // <-- Assigning your single code right here
+            );
+        }
+
+        return rest_ensure_response( [
+            'success' => true,
+            'data'    => $is_deleted,
+            'message' => 'Trash emptied successfully.',
+        ] );
+
+    }
+
+    /**
+     * Update campaign status
+     *
+     * @param WP_REST_Request $request The request object
+     * @return WP_REST_Response|WP_Error
+     */
+    public function campaign_update_status( $request )
+    {
+        $data = [
+            'id'    => $request->get_param('id'), 
+            'status' => $request->get_param('status'),
+            'decline_reason' => $request->get_param('decline_reason'),
+        ];
+
+        $validator = Validator::make($data, [
+            'id'                => 'required',
+            'status'            => 'required|string|in:' . implode(',', CampaignStatus::get_constant_values()),
+            'decline_reason'    => 'required_if:status,declined|string',
+        ]);
+
+        if ( $validator->is_failed() ) {
+            $specific_errors = $validator->get_errors();
+            
+            // Convert the array of specific errors into a single readable string
+            // e.g., "title: Required field, goal_amount: Must be numeric"
+            $error_string = is_array( $specific_errors ) 
+                ? implode( ', ', array_map(
+                    function( $v, $k ) { return $k . ': ' . ( is_array( $v ) ? implode( ' ', $v ) : $v ); }, 
+                    $specific_errors, 
+                    array_keys( $specific_errors )
+                )) 
+                : 'Validation failed';
+
+            return new WP_Error(
+                'rest_invalid_param', // Standard WP REST API code for invalid parameters
+                'Validation errors - ' . $error_string, 
+                [
+                    'status' => 422,
+                    'details' => $specific_errors, // Next.js can read response.data.details to highlight specific inputs
+                ]
+            );
+        }
+
+        try {
+            // Attempt to update the campaign status
+            $is_updated = $this->campaign_service->update_status(
+                $request->get_param('id'),
+                $request->get_param('status'),
+                $request->get_param('decline_reason')
+            );
+
+            // If it returns false instead of throwing
+            if ( ! $is_updated ) {
+                return new WP_Error( 
+                    'update_campaign_status_failed', 
+                    'Failed to update the campaign status.', 
+                    [ 'status' => 500 ] 
+                );
+            }
+
+        } catch ( \Exception $e ) {
+            // Capture the Exception and return a 400 Bad Request for ALL exceptions
+            return new WP_Error(
+                'update_campaign_status_error', 
+                $e->getMessage(), // This will output "Failed to update campaign with ID..."
+                [ 'status' => 400 ] // <-- Assigning your single code right here
+            );
+        }
+
+        return rest_ensure_response( [
+            'success' => true,
+            'data'    => $is_updated,
+            'message' => 'Campaign status updated successfully.',
+        ] );
+    }
+
+    /**
+     * Update campaign secondary status
+     *
+     * @param WP_REST_Request $request The request object
+     * @return WP_REST_Response|WP_Error
+     */
+    public function campaign_update_secondary_status( $request )
+    {
+        $data = [
+            'id'    => $request->get_param('id'), 
+            'status' => $request->get_param('status'),
+        ];
+
+        $validator = Validator::make($data, [
+            'status' => 'required|string|in:' . implode(',', CampaignSecondaryStatus::get_constant_values()),
+        ]);
+
+        if ( $validator->is_failed() ) {
+            $specific_errors = $validator->get_errors();
+            
+            // Convert the array of specific errors into a single readable string
+            // e.g., "title: Required field, goal_amount: Must be numeric"
+            $error_string = is_array( $specific_errors ) 
+                ? implode( ', ', array_map(
+                    function( $v, $k ) { return $k . ': ' . ( is_array( $v ) ? implode( ' ', $v ) : $v ); }, 
+                    $specific_errors, 
+                    array_keys( $specific_errors )
+                )) 
+                : 'Validation failed';
+
+            return new WP_Error(
+                'rest_invalid_param', // Standard WP REST API code for invalid parameters
+                'Validation errors - ' . $error_string, 
+                [
+                    'status' => 422,
+                    'details' => $specific_errors, // Next.js can read response.data.details to highlight specific inputs
+                ]
+            );
+        }
+
+        try {
+            // Attempt to update the campaign secondary status
+            $is_updated = $this->campaign_service->update_secondary_status(
+                $request->get_param('id'),
+                $request->get_param('status')
+            );
+
+            // If it returns false instead of throwing
+            if ( ! $is_updated ) {
+                return new WP_Error( 
+                    'update_campaign_secondary_status_failed', 
+                    'Failed to update the campaign secondary status.', 
+                    [ 'status' => 500 ] 
+                );
+            }
+
+        } catch ( \Exception $e ) {
+            // Capture the Exception and return a 400 Bad Request for ALL exceptions
+            return new WP_Error(
+                'update_campaign_secondary_status_error', 
+                $e->getMessage(), // This will output "Failed to update campaign with ID..."
+                [ 'status' => 400 ] // <-- Assigning your single code right here
+            );
+        }
+
+        $messages = [
+            CampaignSecondaryStatus::END => __('Campaign marked as ended'),
+            CampaignSecondaryStatus::HIDE => __('Campaign visibility changed to hidden'),
+            CampaignSecondaryStatus::VISIBLE => __('Campaign visibility changed to visible'),
+            CampaignSecondaryStatus::PAUSE => __('Campaign pledging paused'),
+            CampaignSecondaryStatus::RESUME => __('Campaign pledging resumed'),
+        ];
+
+        return rest_ensure_response( [
+            'success' => true,
+            'data'    => $is_updated,
+            'message' => $messages[$request->get_param('status')],
+        ] );
+    }
 
     /**
      * Format campaign data for API response
