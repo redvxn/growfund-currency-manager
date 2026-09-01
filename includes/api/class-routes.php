@@ -438,6 +438,30 @@ class GFCM_API_Routes {
             ]
         );
 
+        // ===== Categories Routes (Protected) =====
+
+        // GET all categories 
+        register_rest_route(
+            $this->namespace,
+            '/categories/list',
+            [
+                'methods'             => 'GET',
+                'callback'            => [ new GFCM_Category_Controller(), 'categories_list' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+            ]
+        );
+
+        // GET top level categories 
+        register_rest_route(
+            $this->namespace,
+            '/categories/top-level',
+            [
+                'methods'             => 'GET',
+                'callback'            => [ new GFCM_Category_Controller(), 'categories_top_level' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+            ]
+        );
+
         // ===== Donation Routes (Protected) =====
 
         // 1. GET all donations 

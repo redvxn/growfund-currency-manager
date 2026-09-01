@@ -7,6 +7,7 @@ use Growfund\DTO\Campaign\CampaignFiltersDTO as CampaignFilterDTO;
 use Growfund\Services\CampaignService;
 use Growfund\Services\BookmarkService;
 use Growfund\DTO\JsonResponseDTO;
+use Growfund\Policies\CampaignPolicy;
 use Growfund\PostTypes\Campaign;
 use Growfund\Validation\Validator;
 use Growfund\Sanitizer;
@@ -22,10 +23,12 @@ class GFCM_Campaign_Controller {
 
     protected $campaign_service;
     protected $bookmark_service;
+    protected $campaign_policy;
 
     public function __construct()
     {
         $this->campaign_service = new CampaignService();
+        $this->campaign_policy = new CampaignPolicy();
         $this->bookmark_service = new BookmarkService();
     }
 
@@ -108,6 +111,8 @@ class GFCM_Campaign_Controller {
      */
 
     public function create_campaign( $request ) {
+        $user_id = $request->get_param( 'jwt_user_id' );
+
         $id = $this->campaign_service->create();
 
         if ( ! $id ) {
