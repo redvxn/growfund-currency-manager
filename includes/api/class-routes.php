@@ -220,6 +220,7 @@ class GFCM_API_Routes {
             ]
         );
 
+
         register_rest_route(
             $this->namespace,
             '/campaigns/(?P<id>\d+)',

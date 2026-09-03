@@ -3,7 +3,10 @@
  * Campaign Controller - Handles campaign endpoints
  */
 
+use Growfund\Constants\Activities;
 use Growfund\DTO\Campaign\CampaignFiltersDTO as CampaignFilterDTO;
+use Growfund\DTO\Activity\ActivityFilterDTO;
+use Growfund\Services\ActivityService;
 use Growfund\Services\CampaignService;
 use Growfund\Services\BookmarkService;
 use Growfund\DTO\JsonResponseDTO;
@@ -186,6 +189,7 @@ class GFCM_Campaign_Controller {
             'data'    => $result,
         ] );
     }
+
 
     /**
      * Create a new campaign
