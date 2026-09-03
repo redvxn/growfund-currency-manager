@@ -581,15 +581,13 @@ class GFCM_API_Routes {
             ]
         );
 
-
-
         // GET paginated donations made by the current user (Donor or Fundraiser)
         register_rest_route(
             $this->namespace,
             '/donations/paginated',
             [
                 'methods'             => 'GET',
-                'callback'            => [ new GFCM_Donation_Controller(), 'get_paginated_onations' ],
+                'callback'            => [ new GFCM_Donation_Controller(), 'get_paginated_donations' ],
                 'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
                 'args'                => [
                     'page' => [
@@ -624,6 +622,34 @@ class GFCM_API_Routes {
                     ],
                     'order' => [
                         'type' => 'string',
+                    ],
+                ],
+            ]
+        );
+
+        // GET paginated donation activities
+        register_rest_route(
+            $this->namespace,
+            '/donation/activities',
+            [
+                'methods'             => 'GET',
+                'callback'            => [ new GFCM_Donation_Controller(), 'donation_activities' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'page' => [
+                        'type' => 'integer',
+                    ],
+                    'per_page' => [
+                        'type' => 'integer',
+                    ],
+                    'orderby' => [
+                        'type' => 'string',
+                    ],
+                    'order' => [
+                        'type' => 'string',
+                    ],
+                    'donation_id' => [
+                        'type' => 'integer',
                     ],
                 ],
             ]

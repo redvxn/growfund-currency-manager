@@ -3,8 +3,11 @@
  * Donation Controller - Handles donation retrieval endpoints
  */
 
+use Growfund\Constants\Activities;
 use Growfund\DTO\Donation\DonationFilterParamsDTO;
+use Growfund\DTO\Activity\ActivityFilterDTO;
 use Growfund\Constants\Status\DonationStatus;
+use Growfund\Services\ActivityService;
 use Growfund\Services\DonationService;
 use Growfund\Policies\DonationPolicy;
 use Growfund\DTO\PaginatedCollectionDTO;
@@ -511,6 +514,46 @@ class GFCM_Donation_Controller {
             'success' => true,
             'data'    => $result,
             'message' => $error_message ?? "Bulk action has been applied successfully.",
+        ]);
+    }
+
+    /**
+     * Donation Activities
+     *  
+     * @param WP_REST_Request $request The request object
+     * @return WP_REST_Response|WP_Error
+     */
+    public function donation_activities( $request )
+    {
+        $activity_filter_dto = ActivityFilterDTO::from_array([
+            'page' => max( 1, intval( $request->get_param( 'page' ) ?? 1 ) ),
+            'limit' => max( 1, min( 100, intval( $request->get_param( 'per_page' ) ?? 10 ) ) ),
+            'orderby' => $request->get_param( 'orderby' ) ?? 'created_at',
+            'order' => $request->get_param( 'order' ) ?? 'DESC',
+            'donation_id' => $request->get_param( 'donation_id' ) ?? '',
+        ]);
+
+        try {
+            $activities = (new ActivityService())->paginated($activity_filter_dto, Activities::DONATION);
+            if ( ! $activities ) {
+                return new WP_Error( 
+                    'donation_activities_failed', 
+                    'Failed to retrieve donation activities.', 
+                    [ 'status' => 500 ] 
+                );
+            }
+        } catch ( \Exception $e ) {
+            return new WP_Error(
+                'donation_activities_failed', 
+                $e->getMessage(), 
+                [ 'status' => 400 ] 
+            );
+        }
+
+        return rest_ensure_response([
+            'success' => true,
+            'data'    => $activities,
+            'message' => "Donation activities retrieved successfully.",
         ]);
     }
 
