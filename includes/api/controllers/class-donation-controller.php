@@ -4,6 +4,7 @@
  */
 
 use Growfund\DTO\Donation\DonationFilterParamsDTO;
+use Growfund\Constants\Status\DonationStatus;
 use Growfund\Services\DonationService;
 use Growfund\Policies\DonationPolicy;
 use Growfund\DTO\PaginatedCollectionDTO;
@@ -12,6 +13,10 @@ use Growfund\DTO\Donation\CreateDonationDTO;
 use Growfund\Supports\Payment;
 use Growfund\Sanitizer;
 use Growfund\Validation\Validator;
+use Growfund\DTO\BulkActionDTO;
+use Growfund\Supports\Arr;
+use Growfund\Constants\OptionKeys;
+use Growfund\Supports\Option;
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
@@ -110,6 +115,42 @@ class GFCM_Donation_Controller {
     }
 
     /**
+     * GET Donation by id
+     *
+     * @param WP_REST_Request $request The request object
+     * @return WP_REST_Response|WP_Error
+     */
+    public function get_donation_by_id( $request ) {
+        $donation_id = intval( $request->get_param( 'id' ) );
+        $donation = $this->service->get_by_id( $donation_id );
+
+        try {
+            $data = $this->service->get_by_id($donation_id);
+
+         if ( ! $data ) {
+                return new WP_Error( 
+                    'donation_not_found', 
+                    'Donation not found', 
+                    [ 'status' => 500 ] 
+                );
+            }
+
+        } catch ( \Exception $e ) {
+            // Capture the Exception and return a 400 Bad Request for ALL exceptions
+            return new WP_Error(
+                'donation_not_found', 
+                $e->getMessage(), // This will output "Failed to find donation..."
+                [ 'status' => 400 ] // <-- Assigning your single code right here
+            );
+        }
+
+        return rest_ensure_response( [
+            'success' => true,
+            'data'    => $data,
+        ] );
+    }
+
+    /**
      * GET Currencies
      * @param WP_REST_Request $request The request object
      * @return WP_REST_Response|WP_Error
@@ -155,7 +196,6 @@ class GFCM_Donation_Controller {
      * @param WP_REST_Request $request The request object
      * @return WP_REST_Response|WP_Error
      */
-
     public function create_donation( $request ) {
     
         // FIX 1: Build the associative array directly instead of mixing array/object syntax
@@ -243,9 +283,328 @@ class GFCM_Donation_Controller {
         ]);
     }
 
-    
+    /**
+     * Update the status of a donation
+     *  
+     * @param WP_REST_Request $request The request object
+     * @return WP_REST_Response|WP_Error
+     */
+    public function update_donation_status( $request ) {
+        $data = [
+            'id'    => intval( $request->get_param( 'id' ) ), // Make sure this matches your 'id' validation key
+            'action' => $request->get_param('action'),
+        ];
 
-    // ==================================================
+        $statuses = [
+            DonationStatus::PENDING,
+            DonationStatus::COMPLETED,
+            DonationStatus::FAILED,
+            DonationStatus::CANCELLED,
+            DonationStatus::REFUNDED,
+        ];
+
+        $validator = Validator::make($data, [
+            'id'       => 'required',
+            'action'   => 'required|string|in:' . implode(',', $statuses),
+        ]);
+
+        if ( $validator->is_failed() ) {
+            $specific_errors = $validator->get_errors();
+            
+            // Convert the array of specific errors into a single readable string
+            // e.g., "title: Required field, goal_amount: Must be numeric"
+            $error_string = is_array( $specific_errors ) 
+                ? implode( ', ', array_map(
+                    function( $v, $k ) { return $k . ': ' . ( is_array( $v ) ? implode( ' ', $v ) : $v ); }, 
+                    $specific_errors, 
+                    array_keys( $specific_errors )
+                )) 
+                : 'Validation failed';
+
+            return new WP_Error(
+                'rest_invalid_param', // Standard WP REST API code for invalid parameters
+                'Validation errors - ' . $error_string, 
+                [
+                    'status' => 422,
+                    'details' => $specific_errors, // Next.js can read response.data.details to highlight specific inputs
+                ]
+            );
+        }
+
+        try {
+            $is_updated = $this->service->update_status(
+                intval( $request->get_param( 'id' ) ),
+                $request->get_param('action')
+            );
+
+            // If it returns false instead of throwing
+            if ( ! $is_updated ) {
+                return new WP_Error( 
+                    'donation_status_update_failed', 
+                    'Failed to update the donation status.', 
+                    [ 'status' => 500 ] 
+                );
+            }
+
+        } catch ( \Exception $e ) {
+            return new WP_Error(
+                'donation_status_update_failed', 
+                $e->getMessage(), 
+                [ 'status' => 400 ] 
+            );
+        }
+
+        return rest_ensure_response([
+            'success' => true,
+            'data'    => $is_updated,
+            'message' => "Donation status updated successfully.",
+        ]);
+    }
+
+    /**
+     * Delete a donation
+     *  
+     * @param WP_REST_Request $request The request object
+     * @return WP_REST_Response|WP_Error
+     */
+    public function delete_donation( $request )
+    {
+        $id = intval( $request->get_param( 'id' ) );
+        $is_permanent = boolval( $request->get_param('is_permanent', false) );
+
+        try {
+            $result = $this->service->delete($id, $is_permanent);
+            // If it returns false instead of throwing
+            if ( ! $result ) {
+                return new WP_Error( 
+                    'delete_donation_failed', 
+                    'Failed to delete the donation.', 
+                    [ 'status' => 500 ] 
+                );
+            }
+        } catch ( \Exception $e ) {
+            return new WP_Error(
+                'delete_donation_failed', 
+                $e->getMessage(), 
+                [ 'status' => 400 ] 
+            );
+        }
+
+        return rest_ensure_response([
+            'success' => true,
+            'data'    => $result,
+            'message' => "Donation has been deleted successfully.",
+        ]);
+    }
+
+    /**
+     * Donation Empty Trash - Permanently deletes all donations in the trash
+     *  
+     * @param WP_REST_Request $request The request object
+     * @return WP_REST_Response|WP_Error
+     */
+    public function donation_empty_trash( $request )
+    {
+        try {
+            $is_deleted = $this->service->empty_trash();
+            // If it returns false instead of throwing
+            if ( ! $is_deleted ) {
+                return new WP_Error( 
+                    'empty_trash_failed', 
+                    'Failed to empty the donation trash.', 
+                    [ 'status' => 500 ] 
+                );
+            }
+        } catch ( \Exception $e ) {
+            return new WP_Error(
+                'empty_trash_failed', 
+                $e->getMessage(), 
+                [ 'status' => 400 ] 
+            );
+        }
+
+        return rest_ensure_response([
+            'success' => true,
+            'data'    => $is_deleted ,
+            'message' => "Donation trash has been emptied successfully.",
+        ]);
+    }
+
+    /**
+     * Donation Handle bulk actions
+     *  
+     * @param WP_REST_Request $request The request object
+     * @return WP_REST_Response|WP_Error
+     */
+    public function donation_bulk_actions( $request )
+    {
+        $data = [
+            'ids'    => $request->get_param('ids'), // Make sure this matches your 'ids' validation key
+            'action' => $request->get_param('action'),
+            'fund_id' => $request->get_param('fund_id'),
+        ];
+
+        $validator = Validator::make($data, [
+            'ids'       => 'required|array',
+            'action'    => 'required|string|in:trash,restore,delete,reassign_fund',
+            'fund_id'   => 'required_if:action,reassign_fund',
+        ]);
+
+        if ( $validator->is_failed() ) {
+            $specific_errors = $validator->get_errors();
+            
+            // Convert the array of specific errors into a single readable string
+            // e.g., "title: Required field, goal_amount: Must be numeric"
+            $error_string = is_array( $specific_errors ) 
+                ? implode( ', ', array_map(
+                    function( $v, $k ) { return $k . ': ' . ( is_array( $v ) ? implode( ' ', $v ) : $v ); }, 
+                    $specific_errors, 
+                    array_keys( $specific_errors )
+                )) 
+                : 'Validation failed';
+
+            return new WP_Error(
+                'rest_invalid_param', // Standard WP REST API code for invalid parameters
+                'Validation errors - ' . $error_string, 
+                [
+                    'status' => 422,
+                    'details' => $specific_errors, // Next.js can read response.data.details to highlight specific inputs
+                ]
+            );
+        }
+
+        $dto = BulkActionDTO::from_array_with_sanitize($data);
+        $dto->meta['fund_id'] = $request->get_param('fund_id');
+
+        try {
+            $result = $this->service->bulk_actions($dto);
+            $failed = empty($result['failed']) ? [] : Arr::make($result['failed'])->pluck('id')->toArray();
+                // If it returns false instead of throwing
+                if ( ! empty( $failed ) ) {
+                    // Generate the specific partial-success or failure message
+                    $error_message = sprintf(
+                        /* translators: %s: Donation ids */
+                        __('Bulk action successfully applied for all the selected donations except the donations with id: %s.', 'growfund'),
+                        implode(', ', $failed)
+                    );
+
+                    return new WP_Error(
+                        'rest_bulk_action_failed', 
+                        $error_message, 
+                        [
+                            'status'  => 422, 
+                            'details' => [
+                                'failed_donation_ids' => $failed // Allows the frontend to easily parse which IDs failed
+                            ],
+                        ]
+                    );
+                }
+        } catch ( \Exception $e ) {
+            return new WP_Error(
+                'bulk_action_failed', 
+                $e->getMessage(), 
+                [ 'status' => 400 ] 
+            );
+        }
+
+        return rest_ensure_response([
+            'success' => true,
+            'data'    => $result,
+            'message' => $error_message ?? "Bulk action has been applied successfully.",
+        ]);
+    }
+
+    /**
+     * Donation Receipt
+     *  
+     * @param WP_REST_Request $request The request object
+     * @return WP_REST_Response|WP_Error
+     */
+    public function donation_receipt( $request )
+    {
+        $uid = strval( $request->get_param( 'uid' ) );
+        $data = [];
+
+        try {
+            $data = [
+                'donation' => $this->service->get_by_uid($uid),
+                'template' => Option::get(OptionKeys::PDF_DONATION_RECEIPT_TEMPLATE)
+            ];
+            if ( ! $data['donation'] ) {
+                return new WP_Error( 
+                    'donation_not_found', 
+                    'Failed to find donation with UID.', 
+                    [ 'status' => 500 ] 
+                );
+            }
+            elseif ( empty( $data['template'] ) ) {
+                return new WP_Error( 
+                    'donation_receipt_template_missing', 
+                    'Donation receipt template is missing.', 
+                    [ 'status' => 500 ] 
+                );
+            }
+        } catch ( \Exception $e ) {
+            return new WP_Error(
+                'donation_receipt_failed', 
+                $e->getMessage(), 
+                [ 'status' => 400 ] 
+            );
+        }
+
+        return rest_ensure_response([
+            'success' => true,
+            'data'    => $data,
+            'message' => "Donation receipt generated successfully.",
+        ]);
+    }
+
+    /**
+     * Donation eCard
+     *  
+     * @param WP_REST_Request $request The request object
+     * @return WP_REST_Response|WP_Error
+     */
+    public function donation_ecard( $request )
+    {
+        $uid = strval( $request->get_param( 'uid' ) );
+        $data = [];
+
+        try {
+            $data = [
+                'donation' => $this->service->get_by_uid($uid),
+                'template' => Option::get(OptionKeys::ECARD_TEMPLATE)
+            ];
+            if ( ! $data['donation'] ) {
+                return new WP_Error( 
+                    'donation_not_found', 
+                    'Failed to find donation with UID.', 
+                    [ 'status' => 500 ] 
+                );
+            }
+            elseif ( empty( $data['template'] ) ) {
+                return new WP_Error( 
+                    'ecard_template_missing', 
+                    'eCard template is missing.', 
+                    [ 'status' => 500 ] 
+                );
+            }
+        } catch ( \Exception $e ) {
+            return new WP_Error(
+                'ecard_failed', 
+                $e->getMessage(), 
+                [ 'status' => 400 ] 
+            );
+        }
+
+        return rest_ensure_response([
+            'success' => true,
+            'data'    => $data,
+            'message' => "eCard generated successfully.",
+        ]);
+    }
+
+    /* // ==================================================
     // 2. GET DONATIONS BY CAMPAIGN (Fundraiser Only)
     // Routes: GET /campaigns/donations OR /campaigns/123/donations
     // ==================================================
@@ -305,29 +664,9 @@ class GFCM_Donation_Controller {
                 'total_pages' => ceil( $donations['total'] / $per_page ),
             ],
         ] );
-    }
+    } */
 
-    // ==================================================
-    // 3. GET DONATION BY ID
-    // Route: GET /donations/123
-    // ==================================================
-    public function get_donation( $request ) {
-        $donation_id = intval( $request->get_param( 'id' ) );
-        $donation = $this->service->get_by_id( $donation_id );
-
-        if ( ! $donation ) {
-            return new WP_Error( 'donation_not_found', 'Donation not found', [ 'status' => 404 ] );
-        }
-
-        return rest_ensure_response( [
-            'success' => true,
-            'data'    => $donation,
-        ] );
-    }
-
-
-
-    // ==================================================
+    /* // ==================================================
     // DATABASE QUERY ENGINE
     // ==================================================
     private function query_donations( $args ) {
@@ -389,9 +728,9 @@ class GFCM_Donation_Controller {
             'items' => $items,
             'total' => intval( $total ),
         ];
-    }
+    } */
 
-    private function get_donation_by_id( $donation_id ) {
+    /* private function get_donation_by_id( $donation_id ) {
         global $wpdb;
         $table = $wpdb->prefix . 'growfund_donations';
         $row = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE ID = %d", $donation_id ) );
@@ -454,5 +793,5 @@ class GFCM_Donation_Controller {
             'date'          => $row->created_at,
             'status'        => $row->status,
         ];
-    }
-}
+    }*/
+} 

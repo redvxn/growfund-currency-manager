@@ -16,6 +16,8 @@ use Growfund\DTO\Campaign\UpdateCampaignDTO;
 use Growfund\Constants\Status\CampaignStatus;
 use Growfund\Constants\Status\CampaignSecondaryStatus;
 use Growfund\Supports\Arr;
+use Growfund\Supports\Location;
+use Growfund\Supports\Date;
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
@@ -23,6 +25,7 @@ class GFCM_Campaign_Controller {
 
     protected $campaign_service;
     protected $bookmark_service;
+    protected $location_service;
     protected $campaign_policy;
 
     public function __construct()
@@ -30,6 +33,70 @@ class GFCM_Campaign_Controller {
         $this->campaign_service = new CampaignService();
         $this->campaign_policy = new CampaignPolicy();
         $this->bookmark_service = new BookmarkService();
+        $this->location_service = new Location();
+    }
+
+    /**
+     * Get campaign overview
+     *
+     * @param WP_REST_Request $request The request object
+     * @return WP_REST_Response|WP_Error
+     */
+
+    public function campaign_overview( $request )
+    {
+        $data = [
+            'id'    => $request->get_param('id'), // Make sure this matches your 'ids' validation key
+            'start_date' => $request->get_param('start_date'),
+            'end_date' => $request->get_param('end_date'),
+        ];
+
+        $validator = Validator::make($data, [
+            "id" => "required|post_exists:post_type=" . Campaign::NAME,
+            "start_date" => "nullable|date_format:Y-m-d",
+            "end_date" => "nullable|date_format:Y-m-d",
+        ]);
+
+        if ( $validator->is_failed() ) {
+            $specific_errors = $validator->get_errors();
+            
+            // Convert the array of specific errors into a single readable string
+            // e.g., "title: Required field, goal_amount: Must be numeric"
+            $error_string = is_array( $specific_errors ) 
+                ? implode( ', ', array_map(
+                    function( $v, $k ) { return $k . ': ' . ( is_array( $v ) ? implode( ' ', $v ) : $v ); }, 
+                    $specific_errors, 
+                    array_keys( $specific_errors )
+                )) 
+                : 'Validation failed';
+
+            return new WP_Error(
+                'rest_invalid_param', // Standard WP REST API code for invalid parameters
+                'Validation errors - ' . $error_string, 
+                [
+                    'status' => 422,
+                    'details' => $specific_errors, // Next.js can read response.data.details to highlight specific inputs
+                ]
+            );
+        }
+
+        $start_date = $request->get_param('start_date');
+        $end_date = $request->get_param('end_date');
+
+        if (empty($start_date) && empty($end_date)) {
+            list($start_date, $end_date) = Growfund\Supports\Date::start_and_end_date_of_last_thirty_days();
+        }
+
+        if (empty($end_date)) {
+            $end_date = $start_date;
+        }
+
+        $campaign_overview_data = $this->campaign_service->get_overview_details($data['id'], $start_date, $end_date);
+
+        return rest_ensure_response( [
+            'success' => true,
+            'data'    => $campaign_overview_data,
+        ] );
     }
 
     /**
@@ -65,6 +132,23 @@ class GFCM_Campaign_Controller {
             'success' => true,
             'data'    => $response_dto,
             'paginated' => $paginated,
+        ] );
+    }
+
+    /**
+     * Get all locations (countries and states)
+     *
+     * @param WP_REST_Request $request The request object
+     * @return WP_REST_Response|WP_Error
+     */
+    public function get_locations( $request ) {
+        $include_rest_of_the_world = filter_var( $request->get_param( 'include_rest_of_the_world' ), FILTER_VALIDATE_BOOLEAN );
+
+        $countries = $this->location_service->get_countries_for_dropdown( $include_rest_of_the_world );
+
+        return rest_ensure_response( [
+            'success' => true,
+            'data'    => $countries,
         ] );
     }
 
@@ -239,6 +323,56 @@ class GFCM_Campaign_Controller {
     }
 
     /**
+     * Mark a campaign as featured or non-featured
+     *
+     * @param WP_REST_Request $request The request object
+     * @return WP_REST_Response|WP_Error
+     */
+    public function update_campaign_featured_status( $request ) {
+        $ids = ( $request->get_param( 'ids' ) );
+        $is_featured = filter_var( $request->get_param( 'is_featured' ), FILTER_VALIDATE_BOOLEAN );
+
+        if ( ! $ids ) {
+            return new WP_Error(
+                'invalid_campaign_id',
+                'Campaign ID is required',
+                [ 'status' => 400 ]
+            );
+        }
+
+        try {
+            // Attempt to update the campaign
+            if ( $is_featured == true ) {
+                $result = $this->campaign_service->bulk_featured( $ids );
+            } else {
+                $result = $this->campaign_service->bulk_non_featured( $ids );
+            }
+
+            // If it returns false instead of throwing
+            if ( ! $result ) {
+                return new WP_Error( 
+                    'campaign_mark_as_featured_failed', 
+                    'Failed to mark the campaign as featured.', 
+                    [ 'status' => 500 ] 
+                );
+            }
+
+        } catch ( \Exception $e ) {
+            // Capture the Exception and return a 400 Bad Request for ALL exceptions
+            return new WP_Error(
+                'campaign_mark_as_featured_error', 
+                $e->getMessage(), // This will output "Failed to update campaign with ID..."
+                [ 'status' => 400 ] // <-- Assigning your single code right here
+            );
+        }
+
+        return rest_ensure_response( [
+            'success' => true,
+            'data'    => $result,
+        ] );
+    }
+
+    /**
      * Delete a campaign
      *
      * @param WP_REST_Request $request The request object
@@ -275,6 +409,54 @@ class GFCM_Campaign_Controller {
             'data'    => $is_deleted,
             'message' => 'Campaign is deleted successfully',
         ] );
+    }
+
+    /**
+     * Restore a trashed campaign with associated metadata
+     *
+     * @param WP_REST_Request $request The request object
+     * @return WP_REST_Response|WP_Error
+     */
+
+    public function restore_campaign( $request )
+    {
+        $id = intval( $request->get_param( 'id' ) ); 
+
+        if ( ! $id ) {
+            return new WP_Error(
+                'invalid_campaign_id',
+                'Campaign ID is required',
+                [ 'status' => 400 ]
+            );
+        }
+
+        try {
+            // Attempt to update the campaign
+            $is_restored = $this->campaign_service->restore( $id );
+
+            // If it returns false instead of throwing
+            if ( ! $is_restored ) {
+                return new WP_Error( 
+                    'restore_campaign_failed', 
+                    'Failed to restore the campaign.', 
+                    [ 'status' => 500 ] 
+                );
+            }
+
+        } catch ( \Exception $e ) {
+            // Capture the Exception and return a 400 Bad Request for ALL exceptions
+            return new WP_Error(
+                'campaign_restore_error', 
+                $e->getMessage(), // This will output "Failed to update campaign with ID..."
+                [ 'status' => 400 ] // <-- Assigning your single code right here
+            );
+        }
+
+        return rest_ensure_response( [
+            'success' => true,
+            'data'    => $is_restored,
+            'message' => 'Campaign is restored successfully',
+        ] );   
     }
 
     /**

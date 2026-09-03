@@ -163,6 +163,29 @@ class GFCM_API_Routes {
 
         register_rest_route(
             $this->namespace,
+            '/campaigns/(?P<id>\d+)/overview',
+            [
+                'methods'             => 'GET',
+                'callback'            => [ new GFCM_Campaign_Controller(), 'campaign_overview' ],
+                'permission_callback' => '__return_true', // Public
+                'args'                => [
+                    'id' => [
+                        'type' => 'integer',
+                    ],
+                    'start_date' => [
+                        'type' => 'string',
+                        'format' => 'date',
+                    ],
+                    'end_date' => [
+                        'type' => 'string',
+                        'format' => 'date',
+                    ],
+                ],
+            ]
+        );
+
+        register_rest_route(
+            $this->namespace,
             '/campaigns',
             [
                 'methods'             => 'GET',
@@ -351,6 +374,25 @@ class GFCM_API_Routes {
             ]
         );
 
+        //  Update a campaign's featured status by id
+        register_rest_route(
+            $this->namespace,
+            '/campaign/update-featured-status',
+            [
+                'methods'             => 'POST',
+                'callback'            => [ new GFCM_Campaign_Controller(), 'update_campaign_featured_status' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'ids' => [
+                        'type' => 'array',
+                    ],
+                    'is_featured' => [
+                        'type' => 'boolean',
+                    ],
+                ],
+            ]
+        );
+
         //  Delete a campaign by id
         register_rest_route(
             $this->namespace,
@@ -358,6 +400,22 @@ class GFCM_API_Routes {
             [
                 'methods'             => 'POST',
                 'callback'            => [ new GFCM_Campaign_Controller(), 'delete_campaign' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'id' => [
+                        'type' => 'integer',
+                    ],
+                ],
+            ]
+        );
+
+        //  Restore a trashed campaign by id
+        register_rest_route(
+            $this->namespace,
+            '/campaign/(?P<id>\d+)/restore',
+            [
+                'methods'             => 'POST',
+                'callback'            => [ new GFCM_Campaign_Controller(), 'restore_campaign' ],
                 'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
                 'args'                => [
                     'id' => [
@@ -462,9 +520,22 @@ class GFCM_API_Routes {
             ]
         );
 
+        // ===== Locations Routes (Protected) =====
+
+        // GET all locations 
+        register_rest_route(
+            $this->namespace,
+            '/locations/dropdown',
+            [
+                'methods'             => 'GET',
+                'callback'            => [ new GFCM_Campaign_Controller(), 'get_locations' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+            ]
+        );
+
         // ===== Donation Routes (Protected) =====
 
-        // 1. GET all donations 
+        // GET all donations 
         register_rest_route(
             $this->namespace,
             '/donations',
@@ -512,7 +583,7 @@ class GFCM_API_Routes {
 
 
 
-        // 1. GET paginated donations made by the current user (Donor or Fundraiser)
+        // GET paginated donations made by the current user (Donor or Fundraiser)
         register_rest_route(
             $this->namespace,
             '/donations/paginated',
@@ -553,6 +624,22 @@ class GFCM_API_Routes {
                     ],
                     'order' => [
                         'type' => 'string',
+                    ],
+                ],
+            ]
+        );
+
+        // GET a single donation by ID
+        register_rest_route(
+            $this->namespace,
+            '/donations/(?P<id>\d+)',
+            [
+                'methods'             => 'GET',
+                'callback'            => [ new GFCM_Donation_Controller(), 'get_donation_by_id' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'id' => [
+                        'type' => 'integer',
                     ],
                 ],
             ]
@@ -619,6 +706,109 @@ class GFCM_API_Routes {
                         'type' => 'string',
                     ],
                     'tip_amount' => [
+                        'type' => 'string',
+                    ],
+                ],
+            ]
+        );
+
+        // update the status of a donation by ID
+        register_rest_route(
+            $this->namespace,
+            '/donation/(?P<id>\d+)/update-status',
+            [
+                'methods'             => 'POST',
+                'callback'            => [ new GFCM_Donation_Controller(), 'update_donation_status' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'id' => [
+                        'type' => 'integer',
+                    ],
+                    'action' => [
+                        'type' => 'string',
+                    ],
+                ],
+            ]
+        );
+
+        // delete a donation
+        register_rest_route(
+            $this->namespace,
+            '/donation/(?P<id>\d+)/delete',
+            [
+                'methods'             => 'POST',
+                'callback'            => [ new GFCM_Donation_Controller(), 'delete_donation' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'id' => [
+                        'type' => 'integer',
+                    ],
+                    'is_permanent' => [
+                        'type' => 'boolean',
+                    ],
+                ],
+            ]
+        );
+
+        // empty trash donations
+        register_rest_route(
+            $this->namespace,
+            '/donations/empty-trash',
+            [
+                'methods'             => 'POST',
+                'callback'            => [ new GFCM_Donation_Controller(), 'donation_empty_trash' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+            ]
+        );
+
+        // donation bulk actions
+        register_rest_route(
+            $this->namespace,
+            '/donations/bulk-action',
+            [
+                'methods'             => 'POST',
+                'callback'            => [ new GFCM_Donation_Controller(), 'donation_bulk_actions' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'ids' => [
+                        'type' => 'array',
+                    ],
+                    'action' => [
+                        'type' => 'string',
+                    ],
+                    'fund_id' => [
+                        'type' => 'integer',
+                    ],
+                ],
+            ]
+        );
+
+        // get donation receipt by uid
+        register_rest_route(
+            $this->namespace,
+            '/donation/(?P<uid>[a-zA-Z0-9_-]+)/receipt',
+            [
+                'methods'             => 'GET',
+                'callback'            => [ new GFCM_Donation_Controller(), 'donation_receipt' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'uid' => [
+                        'type' => 'string',
+                    ],
+                ],
+            ]
+        );
+
+        // get eCard by uid
+        register_rest_route(
+            $this->namespace,
+            '/donation/(?P<uid>[a-zA-Z0-9_-]+)/ecard',
+            [
+                'methods'             => 'GET',
+                'callback'            => [ new GFCM_Donation_Controller(), 'donation_ecard' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'uid' => [
                         'type' => 'string',
                     ],
                 ],
