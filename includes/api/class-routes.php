@@ -877,7 +877,7 @@ class GFCM_API_Routes {
                 'callback'            => [ new GFCM_Checkout_Controller(), 'process_sifalo_wallet_payment' ],
                 'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
             ]
-        )
+        );
 
         // ===== Donor Routes (Protected) =====
 
@@ -916,6 +916,156 @@ class GFCM_API_Routes {
                     ],
                     'order' => [
                         'type' => 'string',
+                    ],
+                ],
+            ]
+        );
+
+        // Get Donor Activities by donor ID
+        register_rest_route(
+            $this->namespace,
+            '/donor/(?P<donor_id>\d+)/activities',
+            [
+                'methods'             => 'GET',
+                'callback'            => [ new GFCM_Donor_Controller(), 'donor_activities' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'donor_id' => [
+                        'type' => 'integer',
+                    ],
+                    'page' => [
+                        'type' => 'integer',
+                    ],
+                    'per_page' => [
+                        'type' => 'integer',
+                    ],
+                    'orderby' => [
+                        'type' => 'string',
+                    ],
+                    'order' => [
+                        'type' => 'string',
+                    ],
+                ],
+            ]
+        );
+
+        // Get donor overview by donor ID
+        register_rest_route(
+            $this->namespace,
+            '/donor/(?P<donor_id>\d+)/overview',
+            [
+                'methods'             => 'GET',
+                'callback'            => [ new GFCM_Donor_Controller(), 'donor_overview' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'donor_id' => [
+                        'type' => 'integer',
+                    ],
+                ],
+            ]
+        );
+
+        // Get donor stats by donor ID
+        register_rest_route(
+            $this->namespace,
+            '/donor/(?P<donor_id>\d+)/stats',
+            [
+                'methods'             => 'GET',
+                'callback'            => [ new GFCM_Donor_Controller(), 'donor_stats' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'donor_id' => [
+                        'type' => 'integer',
+                    ],
+                ],
+            ]
+        );
+
+        // Create Donor
+        register_rest_route(
+            $this->namespace,
+            '/donor/create',
+            [
+                'methods'             => 'POST',
+                'callback'            => [ new GFCM_Donor_Controller(), 'create_donor' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'first_name' => [
+                        'type'     => 'string',
+                        'required' => true,
+                    ],
+                    'last_name' => [
+                        'type'     => 'string',
+                        'required' => false,
+                    ],
+                    'email' => [
+                        'type'     => 'string',
+                        'required' => true,
+                    ],
+                    'username' => [
+                        'type'     => 'string',
+                        'required' => true,
+                    ],
+                    'password' => [
+                        'type'     => 'string',
+                        'required' => false,
+                    ],
+                    'phone' => [
+                        'type'     => 'string',
+                        'required' => false,
+                    ],
+                    'image' => [
+                        'type'     => 'integer',
+                        'required' => false,
+                    ],
+                    'billing_address' => [
+                        'type'     => 'array',
+                        'required' => false,
+                    ],
+                ],
+            ]
+        );
+
+        // Update Donor
+        register_rest_route(
+            $this->namespace,
+            '/donor/(?P<donor_id>\d+)/update',
+            [
+                'methods'             => 'POST',
+                'callback'            => [ new GFCM_Donor_Controller(), 'update_donor' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'first_name' => [
+                        'type'     => 'string',
+                        'required' => true,
+                    ],
+                    'last_name' => [
+                        'type'     => 'string',
+                        'required' => false,
+                    ],
+                    'email' => [
+                        'type'     => 'string',
+                        'required' => true,
+                    ],
+                    'username' => [
+                        'type'     => 'string',
+                        'required' => true,
+                    ],
+                    'password' => [
+                        'type'     => 'string',
+                        'required' => false,
+                    ],
+                    'phone' => [
+                        'type'     => 'string',
+                        'required' => false,
+                    ],
+                    'image' => [
+                        'type'     => 'integer',
+                        'required' => false,
+                    ],
+                    'billing_address' => [
+                        'type'     => 'array',
+                        'required' => false,
                     ],
                 ],
             ]

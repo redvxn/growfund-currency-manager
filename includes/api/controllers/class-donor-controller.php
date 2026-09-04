@@ -12,8 +12,12 @@ use Growfund\DTO\Donation\DonationFilterParamsDTO;
 use Growfund\Sanitizer;
 use Growfund\Validation\Validator;
 use Growfund\Services\ActivityService;
+use Growfund\DTO\Donor\CreateDonorDTO;
+use Growfund\DTO\Donor\UpdateDonorDTO;
 use Growfund\Policies\DonorPolicy;
 use Growfund\Constants\HookNames;
+use Growfund\Supports\Arr;
+use Growfund\Supports\Money;
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
@@ -58,6 +62,318 @@ class GFCM_Donor_Controller {
         ]);
     }
 
-    
+    /**
+     * Donor Activities
+     *  
+     * @param WP_REST_Request $request The request object
+     * @return WP_REST_Response|WP_Error
+     */
+    public function donor_activities( $request )
+    {
+        $donor_id = $request->get_param('donor_id');
+
+        if ( ! $donor_id ) {
+            return new WP_Error(
+                'missing_donor_id',
+                'Donor ID is required.',
+                [ 'status' => 400 ]
+            );
+        }
+
+        $user = get_user_by('id', $donor_id);
+        $is_donor = in_array('growfund_donor', (array) $user->roles);
+
+        if ( ! $is_donor ) {
+            return new WP_Error(
+                'invalid_donor',
+                'The provided user is not a donor.',
+                [ 'status' => 400 ]
+            );
+        }
+
+        $activity_filter_dto = ActivityFilterDTO::from_array([
+            'page' => max( 1, intval( $request->get_param( 'page' ) ?? 1 ) ),
+            'limit' => max( 1, min( 100, intval( $request->get_param( 'per_page' ) ?? 10 ) ) ),
+            'orderby' => $request->get_param( 'orderby' ) ?? 'created_at',
+            'order' => $request->get_param( 'order' ) ?? 'DESC',
+            'user_id' => $request->get_param( 'donor_id' ) ?? '',
+        ]);
+
+        try {
+            $activities = (new ActivityService())->paginated($activity_filter_dto, Activities::DONOR);
+            if ( ! $activities ) {
+                return new WP_Error( 
+                    'donor_activities_failed', 
+                    'Failed to retrieve donor activities.', 
+                    [ 'status' => 500 ] 
+                );
+            }
+        } catch ( \Exception $e ) {
+            return new WP_Error(
+                'donor_activities_failed', 
+                $e->getMessage(), 
+                [ 'status' => 400 ] 
+            );
+        }
+
+        return rest_ensure_response([
+            'success' => true,
+            'data'    => $activities,
+            'message' => "Donor activities retrieved successfully.",
+        ]);
+    }
+
+    /**
+     * Get the overview of a donor by ID
+     *
+     * @param WP_REST_Request $request The request object
+     * @return WP_REST_Response|WP_Error
+     */
+    public function donor_overview( $request ) {
+        $donor_id = $request->get_param('donor_id');
+
+        if ( ! $donor_id ) {
+            return new WP_Error(
+                'missing_donor_id',
+                'Donor ID is required.',
+                [ 'status' => 400 ]
+            );
+        }
+
+        $user = get_user_by('id', $donor_id);
+        $is_donor = in_array('growfund_donor', (array) $user->roles);
+
+        if ( ! $is_donor ) {
+            return new WP_Error(
+                'invalid_donor',
+                'The provided user is not a donor.',
+                [ 'status' => 400 ]
+            );
+        }
+
+        try {
+            $donor_overview = $this->service->get_overview($donor_id);
+
+            if ( ! $donor_overview ) {
+                return new WP_Error(
+                    'donor_not_found',
+                    'Donor not found.',
+                    [ 'status' => 404 ]
+                );
+            }
+        } catch (Exception $e) {
+            return new WP_Error(
+                'donor_overview_failed',
+                'Failed to retrieve donor overview.',
+                [ 'status' => 500 ]
+            );
+        }
+
+        return rest_ensure_response([
+            'success' => true,
+            'data'    => $donor_overview,
+        ]);
+
+    }
+
+    /**
+     * Get donor stats by ID
+     *
+     * @param WP_REST_Request $request The request object
+     * @return WP_REST_Response|WP_Error
+     */
+    public function donor_stats( $request )
+    {
+        $donor_id = $request->get_param('donor_id');
+
+        if ( ! $donor_id ) {
+            return new WP_Error(
+                'missing_donor_id',
+                'Donor ID is required.',
+                [ 'status' => 400 ]
+            );
+        }
+
+        $user = get_user_by('id', $donor_id);
+        $is_donor = in_array('growfund_donor', (array) $user->roles);
+
+        if ( ! $is_donor ) {
+            return new WP_Error(
+                'invalid_donor',
+                'The provided user is not a donor.',
+                [ 'status' => 400 ]
+            );
+        }
+
+        $donor_stats = [];
+
+        try {
+            $donor_stats = [
+                'total_number_of_donations' => $this->donation_service->get_total_number_of_donations($donor_id),
+                'total_supported_campaigns' => $this->donation_service->get_successfully_donated_campaigns_by_donor($donor_id),
+                'total_contributions' => Money::prepare_for_display($this->donation_service->get_total_contribution_amount_by_donor($donor_id)),
+                'average_contributions' => Money::prepare_for_display($this->donation_service->get_average_contribution_amount_by_donor($donor_id)),
+            ];
+
+            if ( ! $donor_stats ) {
+                return new WP_Error(
+                    'donor_stats_not_found',
+                    'Donor stats not found.',
+                    [ 'status' => 404 ]
+                );
+            }
+        } catch (Exception $e) {
+            return new WP_Error(
+                'donor_stats_failed',
+                'Failed to retrieve donor stats.',
+                [ 'status' => 500 ]
+            );
+        }
+
+        return rest_ensure_response([
+            'success' => true,
+            'data'    => [
+                'total_number_of_donations' => $donor_stats['total_number_of_donations'],
+                'total_supported_campaigns' => $donor_stats['total_supported_campaigns'],
+                'total_contributions' => $donor_stats['total_contributions'],
+                'average_contributions' => $donor_stats['average_contributions'],
+            ],
+            'message' => 'Donor stats retrieved successfully.',
+        ]);
+    }   
+
+    /**
+     * Create Donor
+     *
+     * @param WP_REST_Request $request The request object
+     * @return WP_REST_Response|WP_Error
+     */
+    public function create_donor( $request )
+    {
+        $data = $request->get_json_params();
+
+        $validator = Validator::make($data, CreateDonorDTO::validation_rules());
+        if ( $validator->is_failed() ) {
+            $specific_errors = $validator->get_errors();
+            
+            // Convert the array of specific errors into a single readable string
+            // e.g., "title: Required field, goal_amount: Must be numeric"
+            $error_string = is_array( $specific_errors ) 
+                ? implode( ', ', array_map(
+                    function( $v, $k ) { return $k . ': ' . ( is_array( $v ) ? implode( ' ', $v ) : $v ); }, 
+                    $specific_errors, 
+                    array_keys( $specific_errors )
+                )) 
+                : 'Validation failed';
+
+            return new WP_Error(
+                'rest_invalid_param', // Standard WP REST API code for invalid parameters
+                'Validation errors - ' . $error_string, 
+                [
+                    'status' => 422,
+                    'details' => $specific_errors, // Next.js can read response.data.details to highlight specific inputs
+                ]
+            );
+        }
+
+        $sanitized_data = Sanitizer::make($data, CreateDonorDTO::sanitization_rules())->get_sanitized_data();
+
+        $donor_dto = CreateDonorDTO::from_array($sanitized_data);
+
+        try {
+            $donor_id = $this->service->store($donor_dto);
+
+            if ( ! $donor_id ) {
+                return new WP_Error(
+                    'donor_creation_failed',
+                    'Failed to create donor.',
+                    [ 'status' => 500 ]
+                );
+            }
+        } catch (Exception $e) {
+            return new WP_Error(
+                'donor_creation_failed',
+                'Failed to create donor: ' . $e->getMessage(),
+                [ 'status' => 500 ]
+            );
+        }
+
+        return rest_ensure_response([
+            'success' => true,
+            'data'    => $donor_id,
+            'message' => 'Donor created successfully.',
+        ]);
+    }
+
+    /**
+     * Update existing donor by ID
+     *
+     * @param WP_REST_Request $request The request object
+     * @return WP_REST_Response|WP_Error
+     */
+    public function update_donor( $request )
+    {
+        $donor_id = $request->get_param('donor_id');
+        $data = $request->get_json_params();
+
+        if ( ! $donor_id ) {
+            return new WP_Error(
+                'missing_donor_id',
+                'Donor ID is required.',
+                [ 'status' => 400 ]
+            );
+        }
+
+        $validator = Validator::make($data, UpdateDonorDTO::validation_rules());
+        if ( $validator->is_failed() ) {
+            $specific_errors = $validator->get_errors();
+            
+            // Convert the array of specific errors into a single readable string
+            // e.g., "title: Required field, goal_amount: Must be numeric"
+            $error_string = is_array( $specific_errors ) 
+                ? implode( ', ', array_map(
+                    function( $v, $k ) { return $k . ': ' . ( is_array( $v ) ? implode( ' ', $v ) : $v ); }, 
+                    $specific_errors, 
+                    array_keys( $specific_errors )
+                )) 
+                : 'Validation failed';
+
+            return new WP_Error(
+                'rest_invalid_param', // Standard WP REST API code for invalid parameters
+                'Validation errors - ' . $error_string, 
+                [
+                    'status' => 422,
+                    'details' => $specific_errors, // Next.js can read response.data.details to highlight specific inputs
+                ]
+            );
+        }
+
+        $sanitized_data = Sanitizer::make($data, UpdateDonorDTO::sanitization_rules())->get_sanitized_data();
+        $donor_dto = UpdateDonorDTO::from_array($sanitized_data);
+
+        try {
+            $result = $this->service->update($donor_id, $donor_dto);
+
+            if ( ! $result ) {
+                return new WP_Error(
+                    'donor_update_failed',
+                    'Failed to update donor.',
+                    [ 'status' => 500 ]
+                );
+            }
+        } catch (Exception $e) {
+            return new WP_Error(
+                'donor_update_failed',
+                'Failed to update donor: ' . $e->getMessage(),
+                [ 'status' => 500 ]
+            );
+        }
+
+        return rest_ensure_response([
+            'success' => true,
+            'data'    => $result,
+            'message' => 'Donor updated successfully.',
+        ]);
+    }
 
 }
