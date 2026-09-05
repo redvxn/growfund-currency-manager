@@ -1071,6 +1071,60 @@ class GFCM_API_Routes {
             ]
         );
 
+        // Donor Paginated Donations
+        register_rest_route(
+            $this->namespace,
+            '/donor/(?P<donor_id>\d+)/donations',
+            [
+                'methods'             => 'GET',
+                'callback'            => [ new GFCM_Donor_Controller(), 'get_donations_by_donor' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'donor_id' => [
+                        'type'     => 'integer',
+                        'required' => true,
+                    ],
+                    'page' => [
+                        'type'     => 'integer',
+                        'required' => false,
+                    ],
+                    'per_page' => [
+                        'type'     => 'integer',
+                        'required' => false,
+                    ],
+                    'orderby' => [
+                        'type'     => 'string',
+                        'required' => false,
+                    ],
+                    'order' => [
+                        'type'     => 'string',
+                        'required' => false,
+                    ],
+                ],
+            ]
+        );
+
+        // Delete Donor
+        register_rest_route(
+            $this->namespace,
+            '/donors/(?P<donor_id>\d+)',
+            [
+                'methods'             => 'DELETE',
+                'callback'            => [ new GFCM_Donor_Controller(), 'delete_donor' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'donor_id' => [
+                        'type'     => 'integer',
+                        'required' => true,
+                    ],
+                    'delete_type' => [
+                        'type'     => 'string',
+                        'required' => true,
+                    ],
+                ],
+            ]
+        );
+
         // ===== Fundraiser Routes (Protected) =====
 
         // 1. GET paginated fundraisers

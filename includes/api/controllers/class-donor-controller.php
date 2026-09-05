@@ -376,4 +376,119 @@ class GFCM_Donor_Controller {
         ]);
     }
 
+    /**
+     * Get the donations of a donor by ID
+     *
+     * @param WP_REST_Request $request The request object
+     * @return WP_REST_Response|WP_Error
+     */
+    public function donor_donations( $request )
+    {
+        $donor_id = $request->get_param('donor_id');
+
+        if ( ! $donor_id ) {
+            return new WP_Error(
+                'missing_donor_id',
+                'Donor ID is required.',
+                [ 'status' => 400 ]
+            );
+        }
+
+        $user = get_user_by('id', $donor_id);
+        $is_donor = in_array('growfund_donor', (array) $user->roles);
+
+        if ( ! $is_donor ) {
+            return new WP_Error(
+                'invalid_donor',
+                'The provided user is not a donor.',
+                [ 'status' => 400 ]
+            );
+        }
+
+        $donation_filter_params_dto = DonationFilterParamsDTO::from_array([
+            'page' => max( 1, intval( $request->get_param( 'page' ) ?? 1 ) ),
+            'limit' => max( 1, min( 100, intval( $request->get_param( 'per_page' ) ?? 10 ) ) ),
+            'orderby' => $request->get_param( 'orderby' ) ?? 'created_at',
+            'order' => $request->get_param( 'order' ) ?? 'DESC',
+            'user_id' => $request->get_param( 'donor_id' ) ?? '',
+        ]);
+
+        try {
+            $donations = $this->donation_service->get_paginated_donations($donation_filter_params_dto);
+
+            if ( ! $donations ) {
+                return new WP_Error(
+                    'donor_donations_not_found',
+                    'Donor donations not found.',
+                    [ 'status' => 404 ]
+                );
+            }
+        } catch (Exception $e) {
+            return new WP_Error(
+                'donor_donations_failed',
+                'Failed to retrieve donor donations.',
+                [ 'status' => 500 ]
+            );
+        }
+
+        return rest_ensure_response([
+            'success' => true,
+            'data'    => $donations,
+            'message' => "Donor donations retrieved successfully.",
+        ]);
+    }
+
+    /**
+     * Delete a donor by ID
+     *
+     * @param WP_REST_Request $request The request object
+     * @return WP_REST_Response|WP_Error
+     */
+    public function delete_donor( $request )
+    {
+        $donor_id = $request->get_param('donor_id');
+        $delete_type = $request->get_param('delete_type', 'trash'); // Default to soft delete
+
+        if ( ! $donor_id ) {
+            return new WP_Error(
+                'missing_donor_id',
+                'Donor ID is required.',
+                [ 'status' => 400 ]
+            );
+        }
+
+        $request_user_id = $request->get_param( 'jwt_user_id' );
+        $roles = get_userdata( $request_user_id )->roles;
+        if ( ! in_array( 'administrator', $roles ) ) {
+            return new WP_Error(
+                'unauthorized',
+                'You do not have permission to delete donors.',
+                [ 'status' => 403 ]
+            );
+        }
+
+        try {
+            $result = $this->service->delete($donor_id, $delete_type);
+
+            if ( ! $result ) {
+                return new WP_Error(
+                    'donor_deletion_failed',
+                    'Failed to delete donor.',
+                    [ 'status' => 500 ]
+                );
+            }
+        } catch (Exception $e) {
+            return new WP_Error(
+                'donor_deletion_failed',
+                'Failed to delete donor: ' . $e->getMessage(),
+                [ 'status' => 500 ]
+            );
+        }
+
+        return rest_ensure_response([
+            'success' => true,
+            'message' => 'Donor deleted successfully.',
+        ]);
+    }
+
 }
