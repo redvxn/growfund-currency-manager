@@ -1194,6 +1194,292 @@ class GFCM_API_Routes {
             ]
         );
 
+        // Create Fundraiser
+        register_rest_route(
+            $this->namespace,
+            '/fundraiser/create',
+            [
+                'methods'             => 'POST',
+                'callback'            => [ new GFCM_Fundraiser_Controller(), 'create_fundraiser' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'first_name' => [
+                        'type'     => 'string',
+                        'required' => true,
+                    ],
+                    'last_name' => [
+                        'type'     => 'string',
+                        'required' => false,
+                    ],
+                    'email' => [
+                        'type'     => 'string',
+                        'required' => true,
+                    ],
+                    'username' => [
+                        'type'     => 'string',
+                        'required' => true,
+                    ],
+                    'password' => [
+                        'type'     => 'string',
+                        'required' => false,
+                    ],
+                    'phone' => [
+                        'type'     => 'string',
+                        'required' => false,
+                    ],
+                    'image' => [
+                        'type'     => 'integer',
+                        'required' => false,
+                    ],
+                ],
+            ]
+        );
+
+        // make user a fundraiser
+        register_rest_route(
+            $this->namespace,
+            '/fundraiser/make-fundraiser',
+            [
+                'methods'             => 'POST',
+                'callback'            => [ new GFCM_Fundraiser_Controller(), 'make_user_fundraiser' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'user_id' => [
+                        'type'     => 'integer',
+                        'required' => true,
+                    ],
+                ],
+            ]
+        );
+
+        // update fundraiser
+        register_rest_route(
+            $this->namespace,
+            '/fundraiser/(?P<fundraiser_id>\d+)/update',
+            [
+                'methods'             => 'POST',
+                'callback'            => [ new GFCM_Fundraiser_Controller(), 'update_fundraiser' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'fundraiser_id' => [
+                        'type'     => 'integer',
+                        'required' => true,
+                    ],
+                    'first_name' => [
+                        'type'     => 'string',
+                        'required' => false,
+                    ],
+                    'last_name' => [
+                        'type'     => 'string',
+                        'required' => false,
+                    ],
+                    'email' => [
+                        'type'     => 'string',
+                        'required' => false,
+                    ],
+                    'username' => [
+                        'type'     => 'string',
+                        'required' => false,
+                    ],
+                    'password' => [
+                        'type'     => 'string',
+                        'required' => false,
+                    ],
+                    'phone' => [
+                        'type'     => 'string',
+                        'required' => false,
+                    ],
+                    'image' => [
+                        'type'     => 'integer',
+                        'required' => false,
+                    ],
+                ],
+            ]
+        );
+
+        // update fundraiser payout method
+        register_rest_route(
+            $this->namespace,
+            '/fundraiser/(?P<fundraiser_id>\d+)/update-payout-method',
+            [
+                'methods'             => 'POST',
+                'callback'            => [ new GFCM_Fundraiser_Controller(), 'update_fundraiser_payout_method' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'fundraiser_id' => [
+                        'type'     => 'integer',
+                        'required' => true,
+                    ],
+                    'payout_method' => [
+                        'type'     => 'string',
+                        'required' => true,
+                    ],
+                    'type' => [
+                        'type'     => 'string',
+                        'required' => true,
+                    ],
+                    'account_holder_name' => [
+                        'type'     => 'string',
+                        'required' => true,
+                    ],
+                    'account_number' => [
+                        'type'     => 'string',
+                        'required' => true,
+                    ],
+                    'swift_bic' => [
+                        'type'     => 'string',
+                        'required' => false,
+                    ],
+                    'bank_details_document' => [
+                        'type'     => 'array',
+                        'required' => false,
+                    ],
+                    'information' => [
+                        'type'     => 'string',
+                        'required' => false,
+                    ],
+                ],
+            ]
+        );
+
+        // update fundraiser status
+        register_rest_route(
+            $this->namespace,
+            '/fundraiser/(?P<fundraiser_id>\d+)/update-status',
+            [
+                'methods'             => 'POST',
+                'callback'            => [ new GFCM_Fundraiser_Controller(), 'update_fundraiser_status' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'fundraiser_id' => [
+                        'type'     => 'integer',
+                        'required' => true,
+                    ],
+                    'action' => [
+                        'type'     => 'string',
+                        'required' => true,
+                    ],
+                    'reason' => [
+                        'type'     => 'string',
+                        'required' => false,
+                    ],
+                ],
+            ]
+        );
+
+        // delete fundraiser
+        register_rest_route(
+            $this->namespace,
+            '/fundraiser/(?P<fundraiser_id>\d+)/delete',
+            [
+                'methods'             => 'DELETE',
+                'callback'            => [ new GFCM_Fundraiser_Controller(), 'delete_fundraiser' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'fundraiser_id' => [
+                        'type'     => 'integer',
+                        'required' => true,
+                    ],
+                    'delete_type' => [
+                        'type'     => 'string',
+                        'required' => true,
+                    ],
+                ],
+            ]
+        );
+
+        // Fundraiser empty trash
+        register_rest_route(
+            $this->namespace,
+            '/fundraisers/empty-trash',
+            [
+                'methods'             => 'POST',
+                'callback'            => [ new GFCM_Fundraiser_Controller(), 'fundraiser_empty_trash' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'is_permanent_delete' => [
+                        'type'     => 'boolean',
+                        'required' => true,
+                    ],
+                ],
+            ]
+        );
+
+        // Fundraiser bulk actions
+        register_rest_route(
+            $this->namespace,
+            '/fundraisers/bulk-action',
+            [
+                'methods'             => 'POST',
+                'callback'            => [ new GFCM_Fundraiser_Controller(), 'fundraiser_bulk_actions' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'ids' => [
+                        'type'     => 'array',
+                        'required' => true,
+                    ],
+                    'action' => [
+                        'type'     => 'string',
+                        'required' => true,
+                    ],
+                    'is_permanent_delete' => [
+                        'type'     => 'boolean',
+                        'required' => false,
+                    ],
+                ],
+            ]
+        );
+
+        // Fundraiser overview
+        register_rest_route(
+            $this->namespace,
+            '/fundraiser/(?P<fundraiser_id>\d+)/overview',
+            [
+                'methods'             => 'GET',
+                'callback'            => [ new GFCM_Fundraiser_Controller(), 'fundraiser_overview' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'fundraiser_id' => [
+                        'type'     => 'integer',
+                        'required' => true,
+                    ],
+                ],
+            ]
+        );
+
+        // Fundraiser Activities
+        register_rest_route(
+            $this->namespace,
+            '/fundraiser/(?P<fundraiser_id>\d+)/activities',
+            [
+                'methods'             => 'GET',
+                'callback'            => [ new GFCM_Fundraiser_Controller(), 'fundraiser_activities' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'fundraiser_id' => [
+                        'type'     => 'integer',
+                        'required' => true,
+                    ],
+                    'page' => [
+                        'type'     => 'integer',
+                        'required' => false,
+                    ],
+                    'per_page' => [
+                        'type'     => 'integer',
+                        'required' => false,
+                    ],
+                    'orderby' => [
+                        'type'     => 'string',
+                        'required' => false,
+                    ],
+                    'order' => [
+                        'type'     => 'string',
+                        'required' => false,
+                    ],
+                ],
+            ]
+        );
+
         /* // 2. GET a single donation by ID
         register_rest_route(
             $this->namespace,
