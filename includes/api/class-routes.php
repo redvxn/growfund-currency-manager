@@ -1077,7 +1077,7 @@ class GFCM_API_Routes {
             '/donor/(?P<donor_id>\d+)/donations',
             [
                 'methods'             => 'GET',
-                'callback'            => [ new GFCM_Donor_Controller(), 'get_donations_by_donor' ],
+                'callback'            => [ new GFCM_Donor_Controller(), 'donor_donations' ],
                 'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
                 'args'                => [
                     'donor_id' => [
@@ -1107,7 +1107,7 @@ class GFCM_API_Routes {
         // Delete Donor
         register_rest_route(
             $this->namespace,
-            '/donors/(?P<donor_id>\d+)',
+            '/donor/(?P<donor_id>\d+)/delete',
             [
                 'methods'             => 'DELETE',
                 'callback'            => [ new GFCM_Donor_Controller(), 'delete_donor' ],
@@ -1120,6 +1120,42 @@ class GFCM_API_Routes {
                     'delete_type' => [
                         'type'     => 'string',
                         'required' => true,
+                    ],
+                ],
+            ]
+        );
+
+        // Donor Empty Trash
+        register_rest_route(
+            $this->namespace,
+            '/donors/empty-trash',
+            [
+                'methods'             => 'POST',
+                'callback'            => [ new GFCM_Donor_Controller(), 'donor_empty_trash' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+            ]
+        );
+
+        // Donor Bulk Actions
+        register_rest_route(
+            $this->namespace,
+            '/donors/bulk-action',
+            [
+                'methods'             => 'POST',
+                'callback'            => [ new GFCM_Donor_Controller(), 'donor_bulk_actions' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'ids' => [
+                        'type'     => 'array',
+                        'required' => true,
+                    ],
+                    'action' => [
+                        'type'     => 'string',
+                        'required' => true,
+                    ],
+                    'is_permanent_delete' => [
+                        'type'     => 'boolean',
+                        'required' => false,
                     ],
                 ],
             ]

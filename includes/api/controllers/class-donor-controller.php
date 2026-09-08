@@ -5,6 +5,7 @@
 
 use Growfund\Constants\Activities;
 use Growfund\Constants\Pagination;
+use Growfund\Constants\UserDeleteType;
 use Growfund\Services\DonationService;
 use Growfund\Services\DonorService;
 use Growfund\DTO\Activity\ActivityFilterDTO;
@@ -414,7 +415,7 @@ class GFCM_Donor_Controller {
         ]);
 
         try {
-            $donations = $this->donation_service->get_paginated_donations($donation_filter_params_dto);
+            $donations = $this->service->get_paginated_donations($donation_filter_params_dto);
 
             if ( ! $donations ) {
                 return new WP_Error(
@@ -488,6 +489,141 @@ class GFCM_Donor_Controller {
         return rest_ensure_response([
             'success' => true,
             'message' => 'Donor deleted successfully.',
+        ]);
+    }
+
+    /**
+     * Donor Empty Trash - Permanently delete all donors in the trash
+     *
+     * @param WP_REST_Request $request The request object
+     * @return WP_REST_Response|WP_Error
+     */
+    public function donor_empty_trash( $request )
+    {
+        $request_user_id = $request->get_param( 'jwt_user_id' );
+        $is_permanent_delete = $request->get_param( 'is_permanent_delete', false );
+        $roles = get_userdata( $request_user_id )->roles;
+        if ( ! in_array( 'administrator', $roles ) ) {
+            return new WP_Error(
+                'unauthorized',
+                'You do not have permission to empty donor trash.',
+                [ 'status' => 403 ]
+            );
+        }
+
+        try {
+            $is_deleted = $this->service->empty_trash( $is_permanent_delete );
+
+            if ( ! $is_deleted ) {
+                return new WP_Error(
+                    'donor_empty_trash_failed',
+                    'Failed to empty donor trash.',
+                    [ 'status' => 500 ]
+                );
+            }
+        } catch (Exception $e) {
+            return new WP_Error(
+                'donor_empty_trash_failed',
+                'Failed to empty donor trash: ' . $e->getMessage(),
+                [ 'status' => 500 ]
+            );
+        }
+
+        return rest_ensure_response([
+            'success' => true,
+            'message' => 'Donor trash emptied successfully.',
+        ]);
+    }
+
+    /**
+     * Donor Bulk Actions - Perform bulk actions on donors (e.g., delete, restore)
+     *
+     * @param WP_REST_Request $request The request object
+     * @return WP_REST_Response|WP_Error
+     */
+    public function donor_bulk_actions( $request )
+    {
+        $request_user_id = $request->get_param( 'jwt_user_id' );
+        $is_permanent_delete = $request->get_param( 'is_permanent_delete', false );
+        $roles = get_userdata( $request_user_id )->roles;
+        if ( ! in_array( 'administrator', $roles ) ) {
+            return new WP_Error(
+                'unauthorized',
+                'You do not have permission to empty donor trash.',
+                [ 'status' => 403 ]
+            );
+        }
+
+        $data = [
+            'ids'    => $request->get_param('ids'), // Make sure this matches your 'ids' validation key
+            'action' => $request->get_param('action'),
+            'is_permanent_delete' => $request->get_param('is_permanent_delete', false),
+        ];
+
+        $validator = Validator::make($data, [
+            'ids'       => 'required|array',
+            'action'    => 'required|string|in:trash,delete,restore',
+            'is_permanent_delete' => 'required_if:action,delete|boolean',
+        ]);
+
+        if ( $validator->is_failed() ) {
+            $specific_errors = $validator->get_errors();
+            
+            // Convert the array of specific errors into a single readable string
+            // e.g., "title: Required field, goal_amount: Must be numeric"
+            $error_string = is_array( $specific_errors ) 
+                ? implode( ', ', array_map(
+                    function( $v, $k ) { return $k . ': ' . ( is_array( $v ) ? implode( ' ', $v ) : $v ); }, 
+                    $specific_errors, 
+                    array_keys( $specific_errors )
+                )) 
+                : 'Validation failed';
+
+            return new WP_Error(
+                'rest_invalid_param', // Standard WP REST API code for invalid parameters
+                'Validation errors - ' . $error_string, 
+                [
+                    'status' => 422,
+                    'details' => $specific_errors, // Next.js can read response.data.details to highlight specific inputs
+                ]
+            );
+        }
+
+        $result = [];
+
+        try {
+            switch ($request->get_param('action')) {
+                case 'trash':
+                    $result = $this->service->bulk_delete($request->get_param('ids'), UserDeleteType::TRASH);
+                    break;
+                case 'delete':
+                    $type = $request->get_param('is_permanent_delete', false) ? UserDeleteType::PERMANENT : UserDeleteType::ANONYMIZE;
+                    $result = $this->service->bulk_delete($request->get_param('ids'), $type);
+                    break;
+                case 'restore':
+                    $result = $this->service->bulk_restore($request->get_param('ids'));
+                    break;
+            }
+
+            if ( ! $result ) {
+                return new WP_Error(
+                    'donor_bulk_action_failed',
+                    'Failed to perform bulk action on donors.',
+                    [ 'status' => 500 ]
+                );
+            }
+        } catch (Exception $e) {
+            return new WP_Error(
+                'donor_bulk_action_failed',
+                'Failed to perform bulk action on donors: ' . $e->getMessage(),
+                [ 'status' => 500 ]
+            );
+        }
+
+        return rest_ensure_response([
+            'success' => true,
+            'data'    => $result,
+            'message' => "Bulk action '{$data['action']}' performed successfully on selected donors.",
         ]);
     }
 
