@@ -497,6 +497,141 @@ class GFCM_API_Routes {
             ]
         );
 
+        // ===== Campaign Post Updates Routes (Protected) =====
+
+        // Get Paginated Campaign Post Updates
+        register_rest_route(
+            $this->namespace,
+            '/campaign/updates/paginated',
+            [
+                'methods'             => 'GET',
+                'callback'            => [ new GFCM_CampaignPost_Controller(), 'paginated_campaign_post_updates' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'page' => [
+                        'type' => 'integer',
+                    ],
+                    'per_page' => [
+                        'type' => 'integer',
+                    ],
+                    'campaign_id' => [
+                        'type' => 'integer',
+                    ],
+                ],
+            ]
+        );
+
+        // Get Campaign Post Update by ID
+        register_rest_route(
+            $this->namespace,
+            '/campaign/update/(?P<id>\d+)/detail',
+            [
+                'methods'             => 'GET',
+                'callback'            => [ new GFCM_CampaignPost_Controller(), 'get_campaign_post_update_detail' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'campaign_update_id' => [
+                        'type' => 'integer',
+                    ],
+                ],
+            ]
+        );
+
+        // Create Campaign Post
+        register_rest_route(
+            $this->namespace,
+            '/campaign/update/create',
+            [
+                'methods'             => 'POST',
+                'callback'            => [ new GFCM_CampaignPost_Controller(), 'create_campaign_post' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'campaign_id' => [
+                        'type' => 'integer',
+                    ],
+                    'title' => [
+                        'type' => 'string',
+                    ],
+                    'slug' => [
+                        'type' => 'string',
+                    ],
+                    'description' => [
+                        'type' => 'string',
+                    ],
+                    'image' => [
+                        'type' => 'array',
+                    ],
+                ],
+            ]
+        );
+
+        // Create Campaign Update Comment
+        register_rest_route(
+            $this->namespace,
+            '/campaign/update/comment/create',
+            [
+                'methods'             => 'POST',
+                'callback'            => [ new GFCM_Comment_Controller(), 'create_comment' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'post_id' => [
+                        'type' => 'integer',
+                    ],
+                    'content' => [
+                        'type' => 'string',
+                    ],
+                    'parent_id' => [
+                        'type' => 'integer',
+                    ],
+                    'comment_type' => [
+                        'type' => 'string',
+                    ],
+                ],
+            ]
+        );
+
+        // Get Campaign Update Comment by ID
+        register_rest_route(
+            $this->namespace,
+            '/campaign/update/comment/(?P<id>\d+)',
+            [
+                'methods'             => 'GET',
+                'callback'            => [ new GFCM_Comment_Controller(), 'get_comment_by_id' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'comment_id' => [
+                        'type' => 'integer',
+                    ],
+                ],
+            ]
+        );
+
+        // Get Paginated Campaign Post Update Comments
+        register_rest_route(
+            $this->namespace,
+            '/campaign/update/comments/paginated',
+            [
+                'methods'             => 'GET',
+                'callback'            => [ new GFCM_Comment_Controller(), 'get_comments' ],
+                'permission_callback' => [ 'GFCM_JWT_Middleware', 'validate' ], // Protected
+                'args'                => [
+                    'page' => [
+                        'type' => 'integer',
+                    ],
+                    'post_id' => [
+                        'type' => 'integer',
+                    ],
+                    'parent_id' => [
+                        'type' => 'integer',
+                    ],
+                    
+                    'comment_type' => [
+                        'type' => 'string',
+                    ],
+                ],
+            ]
+        );
+
         // ===== Categories Routes (Protected) =====
 
         // GET all categories 

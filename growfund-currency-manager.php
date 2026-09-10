@@ -45,6 +45,8 @@ require_once GFCM_PLUGIN_DIR . 'includes/api/middleware/class-combined-auth-midd
 // Include API Controllers
 require_once GFCM_PLUGIN_DIR . 'includes/api/controllers/class-auth-controller.php';
 require_once GFCM_PLUGIN_DIR . 'includes/api/controllers/class-campaign-controller.php';
+require_once GFCM_PLUGIN_DIR . 'includes/api/controllers/class-campaignpost-controller.php';
+require_once GFCM_PLUGIN_DIR . 'includes/api/controllers/class-comment-controller.php';
 require_once GFCM_PLUGIN_DIR . 'includes/api/controllers/class-category-controller.php';
 require_once GFCM_PLUGIN_DIR . 'includes/api/controllers/class-donation-controller.php';
 require_once GFCM_PLUGIN_DIR . 'includes/api/controllers/class-donor-controller.php';
